@@ -111,12 +111,28 @@ class TestProsecutor:
         assert not accusation.usable
         assert accusation.error is not None
 
-    def test_an_unconfident_accusation_is_not_executed(self, tmp_path: Path) -> None:
-        """The Prosecutor is told a wrong accusation is worse than none. When it
-        declines, we must honour that rather than run the test anyway."""
+    def test_an_unconfident_accusation_is_still_executed(self, tmp_path: Path) -> None:
+        """Execution arbitrates, not the model's self-assessment.
+
+        Letting a model veto its own test would put the verdict back in the
+        model's hands, which is exactly what the Prosecutor/Skeptic split
+        exists to prevent. A hedged test that provably passes on the original
+        and fails on the change has caught the regression, whatever its author
+        thought of it. Seen on the real corpus: two cases produced a complete
+        test, flagged themselves unsure, and were discarded unrun.
+        """
         response = json.dumps(
-            {"hypothesis": "", "test_code": "def test_x(): pass", "confident": False}
+            {"hypothesis": "h", "test_code": "def test_x(): pass", "confident": False}
         )
+        accusation = Prosecutor(_router(response, cache_root=tmp_path)).accuse(
+            build_context(_spec(), SOURCE, "diff")
+        )
+        assert accusation.usable
+        assert not accusation.confident  # recorded, just not disqualifying
+
+    def test_an_accusation_with_no_test_is_not_executed(self, tmp_path: Path) -> None:
+        """Genuinely declining - producing no test at all - is still honoured."""
+        response = json.dumps({"hypothesis": "", "test_code": "", "confident": False})
         accusation = Prosecutor(_router(response, cache_root=tmp_path)).accuse(
             build_context(_spec(), SOURCE, "diff")
         )
