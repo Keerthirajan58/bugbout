@@ -36,6 +36,9 @@ from precedent.llm.factory import NoProvidersConfiguredError, build_router
 from precedent.mutation.runner import prepare_workers
 from precedent.mutation.store import load_survivors, run_path
 from precedent.paths import ensure_dirs
+from precedent.retrieval.builder import kb_path
+from precedent.retrieval.index import KnowledgeBase
+from precedent.retrieval.provider import KnowledgeBaseRetrieval
 from precedent.targets import get_target
 from precedent.targets.workspace import TargetWorkspace
 
@@ -180,13 +183,19 @@ def eval_run(
         survivors = survivors[:limit]
 
     prosecutor, skeptic = _build_agents(review)
+    retrieval = None
     if arm == ARM_WITH_RETRIEVAL:
-        out.print(
-            "[yellow]Retrieval is not wired in yet (phase 3); this arm would duplicate the control.[/yellow]"
-        )
-        raise typer.Exit(1)
+        directory = kb_path(slug)
+        if not KnowledgeBase.exists(directory):
+            out.print(
+                f"[red]No knowledge base for {slug}.[/red] Run `precedent kb build {slug}` first."
+            )
+            raise typer.Exit(1)
+        top_k = load_settings().retrieval_top_k
+        retrieval = KnowledgeBaseRetrieval(KnowledgeBase.load(directory), top_k=top_k)
+        out.print(f"Retrieval enabled: {len(retrieval.kb)} documents, top-{top_k}")
 
-    harness = EvalHarness(prosecutor, skeptic)
+    harness = EvalHarness(prosecutor, skeptic, retrieval=retrieval)
     journal = journal_path(slug, arm)
     if not resume:
         journal.unlink(missing_ok=True)

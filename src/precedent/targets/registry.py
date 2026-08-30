@@ -38,6 +38,14 @@ class TargetRepo:
     test_dependencies: tuple[str, ...] = field(default_factory=tuple)
     """Packages the suite imports that installing the project alone won't provide."""
 
+    historical_source_roots: tuple[str, ...] = field(default_factory=tuple)
+    """Paths the package lived at earlier in its history.
+
+    Repositories move. marshmallow switched to a ``src/`` layout in 2019, so a
+    ``git log -- src/marshmallow`` sees only 484 of the 1,385 commits that ever
+    touched the package - 65% of its own bugfix history would be invisible to
+    the retrieval layer, silently and with no error."""
+
     selection_rationale: str = ""
     """Why this repo earns its place, recorded so the choice stays auditable."""
 
@@ -53,6 +61,23 @@ class TargetRepo:
     def short_commit(self) -> str:
         return self.commit[:12]
 
+    @property
+    def source_pathspecs(self) -> tuple[str, ...]:
+        """Every path to search when mining history, current and historical."""
+        return (self.source_root, *self.historical_source_roots)
+
+    def normalize_path(self, path: str) -> str:
+        """Rewrite a historical file path to where that file lives today.
+
+        A 2016 commit touching ``marshmallow/utils.py`` concerns the same code
+        as today's ``src/marshmallow/utils.py``. Without this, historical
+        incidents cannot be matched to the file a diff is in.
+        """
+        for old_root in self.historical_source_roots:
+            if path.startswith(f"{old_root}/"):
+                return f"{self.source_root}/{path[len(old_root) + 1 :]}"
+        return path
+
 
 MARSHMALLOW = TargetRepo(
     slug="marshmallow",
@@ -64,6 +89,7 @@ MARSHMALLOW = TargetRepo(
     source_root="src/marshmallow",
     test_root="tests",
     test_dependencies=("pytest", "simplejson"),
+    historical_source_roots=("marshmallow",),
     selection_rationale=(
         "1,819 statements at 98% coverage with a 1.4s suite - the fastest full-suite "
         "re-run of any candidate, which is what makes per-mutant execution affordable. "
