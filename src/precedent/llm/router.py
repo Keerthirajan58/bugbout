@@ -40,8 +40,11 @@ from precedent.logging import get_logger
 log = get_logger(__name__)
 
 # How long a single request may spend waiting out rate limits before giving up.
-# Bounded so a wedged run surfaces rather than hanging forever.
-MAX_WAIT_SECONDS = 900.0
+# Bounded so a wedged run surfaces rather than hanging forever, but the bound
+# has to exceed what providers actually quote: Groq returned retry hints of
+# 777s and 2169s during the phase 2 run, and a 900s budget silently lost 14 of
+# 115 cases to them.
+MAX_WAIT_SECONDS = 2700.0
 # Used when a provider rate-limits without saying for how long.
 DEFAULT_COOLDOWN_SECONDS = 30.0
 
@@ -201,6 +204,14 @@ class LLMRouter:
             # Nothing served. If it was only rate limits, the condition is
             # temporary by definition - wait it out rather than losing the case.
             if not rate_limited or waited >= self.max_wait_seconds:
+                # Lanes skipped while cooling down never reached `failures`,
+                # which produced a bare "No provider could serve the request"
+                # with nothing after the colon. Fold them in so the reason is
+                # always visible.
+                for name, cooldown in rate_limited.items():
+                    failures.setdefault(
+                        name, f"cooling down for {cooldown:.0f}s; waited {waited:.0f}s"
+                    )
                 raise AllProvidersFailedError(failures)
 
             delay = min(max(1.0, min(rate_limited.values())), self.max_wait_seconds - waited)

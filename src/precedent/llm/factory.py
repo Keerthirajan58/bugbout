@@ -22,10 +22,13 @@ GROQ_LANE_MODELS: tuple[str, ...] = (
     "qwen/qwen3.6-27b",
 )
 
-# A Prosecutor call costs roughly 1,400 tokens, so 8,000 tokens/minute allows
-# about 5.7 calls a minute. Pacing at 11s stays under that, which is far cheaper
-# than repeatedly discovering the limit with a rejected request.
-GROQ_MIN_INTERVAL_SECONDS = 11.0
+# A Prosecutor call costs roughly 1,400 tokens against an 8,000 tokens/minute
+# budget, so the theoretical ceiling is ~5.7 calls a minute. Pacing at 11s ran
+# at 96% of that ceiling, and any variance - a longer diff, a repair attempt,
+# a retrieval block - pushed it over: the phase 2 run drew retry hints of up to
+# 2169s and lost cases outright. 15s targets ~70% utilisation, which is slower
+# per lane but strictly faster overall than provoking multi-minute cooldowns.
+GROQ_MIN_INTERVAL_SECONDS = 15.0
 
 # Gemini's free tier is 20 requests per day *per model*, which cannot sustain a
 # multi-thousand-call evaluation. It is kept for single-diff use, where quality
@@ -76,11 +79,21 @@ def build_agent_pool(
 ) -> AgentPool:
     """Build one agent pair per model lane, for batch evaluation.
 
-    Each lane holds exactly one model and never falls back to another. That is
-    deliberate: cross-model fallback would let a mutant be answered by different
-    models in the two ablation arms, which is precisely the confound the
-    deterministic assignment exists to prevent. A rate-limited lane waits
-    instead, which the measured quotas leave ample room for.
+    Each lane *prefers* its own model, and falls back to the others in rotation
+    when its own is exhausted.
+
+    The first design gave each lane exactly one model with no fallback, so that
+    a mutant could never be answered by different models in the two ablation
+    arms. Measurement showed the cost was unacceptable: Groq returned a 1,174s
+    reset on one model, and every case assigned to that lane blocked for twenty
+    minutes, stalling a run that was 98/115 complete.
+
+    Rotation keeps the intent while removing the stall. Under normal load the
+    pacing keeps each lane on its own model, so assignment stays effectively
+    deterministic; under exhaustion a case is answered rather than lost. The
+    model that actually served is recorded on every case, so pairing is
+    *verified* against the record rather than assumed - and the ablation can be
+    reported on the same-model subset as a robustness check.
     """
     settings = settings or load_settings()
     if not settings.has("groq_api_key"):
@@ -92,13 +105,18 @@ def build_agent_pool(
     key = settings.require("groq_api_key")
     lane_models = models or GROQ_LANE_MODELS
     pairs = []
-    for model in lane_models:
+    for index in range(len(lane_models)):
+        # Own model first, then the rest in rotation, so lanes prefer distinct
+        # models but no lane is ever a dead end.
+        ordered = lane_models[index:] + lane_models[:index]
+        providers: list[Provider] = [GroqProvider(key, model=m) for m in ordered]
         router = LLMRouter(
-            [GroqProvider(key, model=model)],
+            providers,
             cache=cache,
             min_interval=GROQ_MIN_INTERVAL_SECONDS,
         )
         pairs.append(_pair(router, settings, review))
+
     return AgentPool(pairs=tuple(pairs))
 
 
