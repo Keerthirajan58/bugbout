@@ -1,0 +1,44 @@
+# --- Precedent virtualenv (named in the build brief) ---
+RagAgent/
+.venv/
+venv/
+
+# --- generated data ---
+# Workspaces are multi-hundred-MB target checkouts; they are fully reproducible
+# from the pinned SHAs in targets/registry.py, so they are never committed.
+data/workspaces/
+data/cache/
+# Artifacts ARE committed: the frozen no-RAG baseline and the ablation results
+# are the project's evidence. Only scratch output is excluded.
+data/artifacts/**/scratch/
+data/**/*.tmp
+
+# --- secrets ---
+.env
+.env.local
+*.pem
+
+# --- python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- node / next.js (phase 4) ---
+node_modules/
+dashboard/.next/
+dashboard/out/
+.vercel
+
+# --- os ---
+.DS_Store
+
+# --- private planning docs (kept locally, never published) ---
+precedent-build-brief.md

@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Keeps runs reproducible and stops any step from silently reaching the network
+  # for a newer resolution than the one that was tested.
+  UV_FROZEN: "0"
+  PYTHONDONTWRITEBYTECODE: "1"
+
+jobs:
+  quality:
+    name: lint, types, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install project
+        run: uv pip install --system -e ".[dev]"
+
+      - name: Ruff lint
+        run: ruff check --output-format=github .
+
+      - name: Ruff format
+        run: ruff format --check .
+
+      - name: Mypy (strict)
+        run: mypy
+
+      - name: Pytest
+        run: pytest --cov --cov-report=term-missing
+
+  targets:
+    name: target baselines are green
+    # The gate every later phase depends on: mutation scoring is only meaningful
+    # if each target's unmodified suite passes first. Runs after the fast lane so
+    # a lint error fails in one minute rather than ten.
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [marshmallow, arrow]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+
+      - name: Install project
+        run: uv pip install --system -e .
+
+      - name: Prepare ${{ matrix.target }} at its pinned commit
+        run: precedent targets prepare ${{ matrix.target }}
+
+      - name: Verify baseline suite is green
+        run: precedent targets verify ${{ matrix.target }}

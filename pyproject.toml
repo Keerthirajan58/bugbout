@@ -1,0 +1,104 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "precedent"
+dynamic = ["version"]
+description = "An adversarial, retrieval-grounded code verification agent."
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+authors = [{ name = "Keerthirajan58", email = "keerthirajan19122001@gmail.com" }]
+keywords = ["mutation-testing", "rag", "llm-agents", "code-review", "regression-testing"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Testing",
+]
+
+dependencies = [
+    # CLI + presentation
+    "typer>=0.15",
+    "rich>=13.9",
+    # config + validation
+    "pydantic>=2.10",
+    "pydantic-settings>=2.7",
+    # transport + resilience
+    "httpx>=0.28",
+    "tenacity>=9.0",
+]
+
+[project.optional-dependencies]
+# Phase 2: agent pair. Providers are optional so Phase 0/1 install stays light.
+llm = [
+    "google-genai>=1.0",
+    "groq>=0.13",
+]
+# Phase 3: knowledge base + hybrid retrieval.
+rag = [
+    "rank-bm25>=0.2.2",
+    "fastembed>=0.5",
+    "psycopg[binary]>=3.2",
+    "pgvector>=0.3.6",
+]
+dev = [
+    "ruff>=0.9",
+    "mypy>=1.14",
+    "pytest>=8.3",
+    "pytest-cov>=6.0",
+]
+
+[project.scripts]
+precedent = "precedent.cli:app"
+
+[project.urls]
+Homepage = "https://github.com/Keerthirajan58/precedent"
+
+[tool.hatch.version]
+path = "src/precedent/__about__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/precedent"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RET", "ARG", "PTH", "RUF", "S"]
+ignore = [
+    "E501",    # line length is enforced by the formatter, not the linter
+    "B008",    # typer's Option()/Argument() defaults are the documented idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+# This module exists to run subprocesses. Every argv is built from the pinned
+# target registry or from literals, never from user input, and shell=False
+# throughout - so S603's "untrusted input" premise does not apply here.
+"src/precedent/targets/workspace.py" = ["S603"]
+"tests/*" = ["ARG", "S101", "S105", "S106"]  # unused fixtures, bare asserts and fake credentials are the pytest idiom
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+files = ["src/precedent"]
+
+[[tool.mypy.overrides]]
+module = ["rank_bm25.*", "fastembed.*", "pgvector.*", "groq.*", "google.genai.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --strict-markers"
+markers = [
+    "slow: exercises a real target repo checkout; excluded from the fast CI lane",
+    "network: requires network access",
+]
+
+[tool.coverage.run]
+source = ["src/precedent"]
+branch = true
