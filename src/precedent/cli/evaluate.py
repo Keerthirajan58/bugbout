@@ -327,6 +327,54 @@ def eval_ablation(
     delta = b["catch_rate"] - a["catch_rate"]
     out.print(f"\n  [bold]delta {delta:+.1%}[/bold]  ({b['caught'] - a['caught']:+d} mutants)")
 
+    # Per-mutant view. The aggregate rate can hide churn - retrieval flipping
+    # some mutants on while breaking others - and the flips are the concrete
+    # claim a reader can check case by case.
+    control = {c["mutant_id"]: c for c in without["cases"]}
+    gained, lost, same_model = [], [], 0
+    for case in with_["cases"]:
+        prior = control.get(case["mutant_id"])
+        if prior is None:
+            continue
+        if prior.get("model") == case.get("model"):
+            same_model += 1
+        if case["caught"] and not prior["caught"]:
+            gained.append(case)
+        elif prior["caught"] and not case["caught"]:
+            lost.append(case)
+
+    out.print(
+        f"  [green]+{len(gained)}[/green] caught only with retrieval, [red]-{len(lost)}[/red] lost"
+    )
+
+    # Lane rotation means a mutant can meet different models in the two arms.
+    # Rather than assume pairing, verify it and report the paired subset, where
+    # model choice cannot contribute to the difference at all.
+    paired = [
+        c
+        for c in with_["cases"]
+        if (p := control.get(c["mutant_id"])) is not None and p.get("model") == c.get("model")
+    ]
+    if paired and len(paired) != len(with_["cases"]):
+        pc = sum(1 for c in paired if c["caught"])
+        pa = sum(1 for c in paired if control[c["mutant_id"]]["caught"])
+        out.print(
+            f"\n  same-model subset ({len(paired)}/{len(with_['cases'])} mutants): "
+            f"{pa}/{len(paired)} -> {pc}/{len(paired)} "
+            f"([bold]{(pc - pa) / len(paired):+.1%}[/bold])"
+        )
+    elif paired:
+        out.print(f"  [dim]all {same_model} mutants used the same model in both arms[/dim]")
+
+    if gained:
+        out.print("\n  [bold]caught only with retrieval:[/bold]")
+        for case in gained[:8]:
+            cite = case.get("citation") or "-"
+            out.print(
+                f"    {case['mutant_id']}  {case['module_path'].split('/')[-1]}"
+                f":{case.get('function') or '?'}  cited {cite}"
+            )
+
 
 @eval_app.command("export")
 def eval_export(
