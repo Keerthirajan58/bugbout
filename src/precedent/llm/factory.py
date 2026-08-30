@@ -30,6 +30,17 @@ GROQ_LANE_MODELS: tuple[str, ...] = (
 # per lane but strictly faster overall than provoking multi-minute cooldowns.
 GROQ_MIN_INTERVAL_SECONDS = 15.0
 
+# Retrieval roughly triples the prompt. Measured on the real corpus: a control
+# call is ~900 tokens of prompt, a retrieval call adds ~1,712 more, and with the
+# response the whole exchange costs ~3,200 tokens against the same 8,000/min
+# budget - about 2.5 calls a minute rather than 5.7.
+#
+# The pacing is raised rather than the context trimmed. Cutting the retrieved
+# block to fit the old interval would understate exactly what the ablation is
+# meant to measure, and the cost is only wall-clock: four lanes at 1.75 calls a
+# minute still finish 115 cases in well under an hour.
+GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS = 34.0
+
 # Gemini's free tier is 20 requests per day *per model*, which cannot sustain a
 # multi-thousand-call evaluation. It is kept for single-diff use, where quality
 # matters and volume does not.
@@ -76,6 +87,7 @@ def build_agent_pool(
     *,
     review: bool = True,
     models: tuple[str, ...] | None = None,
+    min_interval: float | None = None,
 ) -> AgentPool:
     """Build one agent pair per model lane, for batch evaluation.
 
@@ -104,17 +116,14 @@ def build_agent_pool(
     cache = ResponseCache(enabled=settings.llm_cache_enabled)
     key = settings.require("groq_api_key")
     lane_models = models or GROQ_LANE_MODELS
+    interval = min_interval if min_interval is not None else GROQ_MIN_INTERVAL_SECONDS
     pairs = []
     for index in range(len(lane_models)):
         # Own model first, then the rest in rotation, so lanes prefer distinct
         # models but no lane is ever a dead end.
         ordered = lane_models[index:] + lane_models[:index]
         providers: list[Provider] = [GroqProvider(key, model=m) for m in ordered]
-        router = LLMRouter(
-            providers,
-            cache=cache,
-            min_interval=GROQ_MIN_INTERVAL_SECONDS,
-        )
+        router = LLMRouter(providers, cache=cache, min_interval=interval)
         pairs.append(_pair(router, settings, review))
 
     return AgentPool(pairs=tuple(pairs))

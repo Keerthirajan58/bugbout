@@ -34,6 +34,8 @@ from precedent.eval.store import (
     save_eval,
 )
 from precedent.llm.factory import (
+    GROQ_MIN_INTERVAL_SECONDS,
+    GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS,
     NoProvidersConfiguredError,
     build_agent_pool,
     build_router,
@@ -187,8 +189,15 @@ def eval_run(
     if limit:
         survivors = survivors[:limit]
 
+    # Retrieval roughly triples the prompt, so the same token budget allows
+    # fewer calls per minute. Pacing follows the arm's actual cost.
+    interval = (
+        GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS
+        if arm == ARM_WITH_RETRIEVAL
+        else GROQ_MIN_INTERVAL_SECONDS
+    )
     try:
-        pool = build_agent_pool(load_settings(), review=review)
+        pool = build_agent_pool(load_settings(), review=review, min_interval=interval)
     except NoProvidersConfiguredError as exc:
         out.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
