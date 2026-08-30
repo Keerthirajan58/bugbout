@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import hashlib
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from precedent.agents.prosecutor import Prosecutor
 from precedent.agents.skeptic import Skeptic
@@ -36,6 +36,22 @@ class AgentPool:
     """A set of agent pairs, one per model lane."""
 
     pairs: tuple[tuple[Prosecutor, Skeptic], ...]
+
+    preferred: dict[str, str] = field(default_factory=dict)
+    """Mutant id -> model that must serve it, when one is already established.
+
+    The second arm of an ablation should meet each mutant with the same model
+    the first arm used. Hashing alone does not achieve that once lanes are
+    allowed to fail over: in the first phase 3 run only 41 of 115 mutants drew
+    the same model in both arms, and *every one* of the 12 regressions the
+    retrieval arm appeared to lose had swapped models. That is a measurement
+    artefact, not a property of retrieval.
+
+    Seeding this from the frozen control arm routes each mutant back to its
+    original model, so the comparison is paired by construction rather than by
+    luck. Fallback still exists - a wedged lane must not lose the case - and
+    the model that actually served is still recorded, so pairing is verified
+    afterwards rather than assumed."""
 
     def __post_init__(self) -> None:
         if not self.pairs:
@@ -48,11 +64,21 @@ class AgentPool:
     def index_for(self, mutant_id: str) -> int:
         """Which lane serves this mutant. Stable across runs, arms and machines.
 
-        Hashing the id rather than using its position means the assignment does
-        not shift when the corpus is filtered or re-ordered.
+        A recorded preference wins, so a mutant returns to the model that
+        already answered it. Otherwise the id is hashed - not its position, so
+        the assignment does not shift when the corpus is filtered or reordered.
         """
+        wanted = self.preferred.get(mutant_id)
+        if wanted:
+            for index, (prosecutor, _) in enumerate(self.pairs):
+                if prosecutor.router.providers[0].model == wanted:
+                    return index
         digest = hashlib.sha256(mutant_id.encode()).hexdigest()[:8]
         return int(digest, 16) % len(self.pairs)
+
+    def with_preferences(self, preferred: dict[str, str]) -> AgentPool:
+        """A pool that routes the given mutants back to their recorded models."""
+        return AgentPool(pairs=self.pairs, preferred=preferred)
 
     def for_mutant(self, mutant_id: str) -> tuple[Prosecutor, Skeptic]:
         return self.pairs[self.index_for(mutant_id)]

@@ -205,6 +205,19 @@ def eval_run(
 
     retrieval = None
     if arm == ARM_WITH_RETRIEVAL:
+        # Pair against the control arm: route each mutant to the model that
+        # already answered it, so a model swap cannot masquerade as an effect
+        # of retrieval.
+        try:
+            control = load_eval(slug, ARM_NO_RETRIEVAL)
+            preferred = {c["mutant_id"]: c["model"] for c in control["cases"] if c.get("model")}
+            if preferred:
+                pool = pool.with_preferences(preferred)
+                out.print(
+                    f"Pairing against the control arm: {len(preferred)} mutants pinned to their prior model"
+                )
+        except ArtifactError:
+            out.print("[yellow]No control arm found; model assignment will be hash-based.[/yellow]")
         directory = kb_path(slug)
         if not KnowledgeBase.exists(directory):
             out.print(

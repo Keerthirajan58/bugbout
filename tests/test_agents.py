@@ -436,3 +436,45 @@ class TestAgentPool:
     def test_an_empty_pool_is_rejected(self) -> None:
         with pytest.raises(ValueError, match="at least one agent pair"):
             AgentPool(pairs=())
+
+
+class TestPairedAssignment:
+    """Routing the second arm back to the first arm's models.
+
+    In the first phase 3 run only 41 of 115 mutants met the same model in both
+    arms, and every one of the 12 regressions the retrieval arm appeared to
+    lose had swapped models. The aggregate looked like retrieval hurting; it
+    was a measurement artefact.
+    """
+
+    @staticmethod
+    def _pool(models: tuple[str, ...]) -> AgentPool:
+        pairs = tuple(
+            (
+                Prosecutor(LLMRouter([FakeProvider(model=m)], cache=ResponseCache(enabled=False))),
+                Skeptic(None, review_enabled=False),
+            )
+            for m in models
+        )
+        return AgentPool(pairs=pairs)
+
+    def test_a_preference_routes_to_that_model(self) -> None:
+        pool = self._pool(("a", "b", "c", "d")).with_preferences({"m1": "c"})
+        assert pool.model_for("m1") == "c"
+
+    def test_mutants_without_a_preference_still_hash(self) -> None:
+        base = self._pool(("a", "b", "c", "d"))
+        pinned = base.with_preferences({"other": "c"})
+        assert pinned.model_for("m2") == base.model_for("m2")
+
+    def test_an_unknown_model_falls_back_to_hashing(self) -> None:
+        """A preference naming a model no longer in the pool must not crash the
+        run - it degrades to the default assignment."""
+        base = self._pool(("a", "b"))
+        pinned = base.with_preferences({"m1": "retired-model"})
+        assert pinned.model_for("m1") == base.model_for("m1")
+
+    def test_preferences_do_not_mutate_the_original_pool(self) -> None:
+        base = self._pool(("a", "b"))
+        base.with_preferences({"m1": "b"})
+        assert base.preferred == {}
