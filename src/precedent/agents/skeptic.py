@@ -126,7 +126,8 @@ class Skeptic:
         if not accusation.usable:
             return SkepticVerdict(
                 verdict="no_candidate",
-                reason=accusation.error or "the Prosecutor declined to make an accusation",
+                reason=accusation.error
+                or "the Prosecutor produced no test (it found no behavioural difference)",
             )
 
         path = workspace.repo_dir / spec.module_path

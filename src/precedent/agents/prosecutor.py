@@ -81,8 +81,23 @@ class Accusation:
 
     @property
     def usable(self) -> bool:
-        """Whether there is a test worth executing."""
-        return self.error is None and self.confident and bool(self.test_code.strip())
+        """Whether there is a test worth executing.
+
+        Note what is *not* required: confidence. If the Prosecutor produced a
+        test, it gets executed even when the model flagged itself unsure.
+
+        That follows from the project's central claim. The Skeptic decides by
+        running the test against both versions of the code - execution is the
+        arbiter, not persuasion. Letting a model's self-assessment veto its own
+        test would put the verdict back in the model's hands, which is exactly
+        what the Prosecutor/Skeptic split exists to prevent. A hedged test that
+        provably passes on the original and fails on the change has caught the
+        regression, whatever its author thought of it.
+
+        Confidence is still recorded, so unconfident catches can be reported
+        separately if that distinction ever matters.
+        """
+        return self.error is None and bool(self.test_code.strip())
 
     @staticmethod
     def failed(reason: str) -> Accusation:
