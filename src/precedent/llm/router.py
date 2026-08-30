@@ -1,21 +1,31 @@
-"""Routes a request across providers, with caching and failover.
+"""Routes a request across providers, with caching, throttling and failover.
 
-The evaluation is roughly ten thousand calls and every provider here is on a
-free tier with a daily cap. A single-provider client would stall the run the
-moment that cap is reached, hours in, with no way to resume except waiting for
-the quota to reset.
+The evaluation is roughly two thousand calls and every provider here is on a
+free tier. Measuring those tiers rather than assuming them changed the design:
+Groq's ``gpt-oss-120b`` allows **8,000 tokens per minute**, and a Prosecutor call
+costs about 1,400 - so roughly five calls a minute, no matter how many workers
+are pushing. Four parallel workers against that limit produced 29 failures out
+of 32 requests in an early pilot.
 
-So the router: serves from cache when it can, tries providers in order, and
-treats a rate limit as a signal to move on rather than an error. What it will
-not do is retry forever - a genuinely bad request must surface as a failure
-rather than burn the remaining quota on both providers.
+So the router does three things a naive client does not:
+
+* **Waits.** A rate limit is a *temporary* condition with a known reset window,
+  not an error. Providers report that window (``retry-after``, or Groq's
+  ``x-ratelimit-reset-tokens``), and the router honours it instead of guessing.
+* **Paces.** A minimum interval between calls to the same provider keeps the run
+  under the limit rather than repeatedly discovering it.
+* **Fails over.** When one lane is cooling down, another can serve immediately.
+
+A "lane" is a (provider, model) pair, because quotas are per model: adding a
+second Groq model adds a genuinely separate token bucket.
 """
 
 from __future__ import annotations
 
+import threading
 import time
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from precedent.llm.base import (
     LLMRequest,
@@ -29,6 +39,12 @@ from precedent.logging import get_logger
 
 log = get_logger(__name__)
 
+# How long a single request may spend waiting out rate limits before giving up.
+# Bounded so a wedged run surfaces rather than hanging forever.
+MAX_WAIT_SECONDS = 900.0
+# Used when a provider rate-limits without saying for how long.
+DEFAULT_COOLDOWN_SECONDS = 30.0
+
 
 class AllProvidersFailedError(RuntimeError):
     """Every configured provider refused or failed."""
@@ -40,6 +56,41 @@ class AllProvidersFailedError(RuntimeError):
 
 
 @dataclass
+class Lane:
+    """One provider/model pair, with its own quota and pacing state."""
+
+    provider: Provider
+    min_interval: float = 0.0
+    """Seconds to leave between calls, to stay under a requests-per-minute cap."""
+
+    _available_at: float = 0.0
+    _lock: threading.Lock = field(default_factory=threading.Lock)
+
+    @property
+    def name(self) -> str:
+        return f"{self.provider.name}:{self.provider.model}"
+
+    def wait_seconds(self, now: float) -> float:
+        """How long until this lane may be used again."""
+        return max(0.0, self._available_at - now)
+
+    def reserve(self) -> None:
+        """Claim the next slot, pacing calls to the configured interval."""
+        with self._lock:
+            now = time.monotonic()
+            start = max(now, self._available_at)
+            self._available_at = start + self.min_interval
+        delay = start - now
+        if delay > 0:
+            time.sleep(delay)
+
+    def cool_down(self, seconds: float) -> None:
+        """Mark the lane unusable for a while after a rate limit."""
+        with self._lock:
+            self._available_at = max(self._available_at, time.monotonic() + seconds)
+
+
+@dataclass
 class RouterStats:
     """Where answers came from. Reported so a run's provenance is not a mystery."""
 
@@ -47,6 +98,8 @@ class RouterStats:
     cache_hits: int = 0
     cache_misses: int = 0
     failovers: int = 0
+    rate_limit_waits: int = 0
+    seconds_waiting: float = 0.0
     prompt_tokens: int = 0
     completion_tokens: int = 0
 
@@ -56,13 +109,14 @@ class RouterStats:
         rate = self.cache_hits / total if total else 0.0
         return (
             f"served [{served or 'none'}] | cache {self.cache_hits}/{total} ({rate:.0%}) "
-            f"| failovers {self.failovers} "
+            f"| failovers {self.failovers} | rate-limit waits {self.rate_limit_waits} "
+            f"({self.seconds_waiting / 60:.1f} min) "
             f"| tokens {self.prompt_tokens}+{self.completion_tokens}"
         )
 
 
 class LLMRouter:
-    """A cache-backed, failing-over client over an ordered list of providers."""
+    """A cache-backed, throttled, failing-over client over ordered provider lanes."""
 
     def __init__(
         self,
@@ -71,78 +125,111 @@ class LLMRouter:
         cache: ResponseCache | None = None,
         max_attempts_per_provider: int = 2,
         backoff_seconds: float = 2.0,
+        min_interval: float | dict[str, float] = 0.0,
+        max_wait_seconds: float = MAX_WAIT_SECONDS,
     ) -> None:
         if not providers:
             raise ValueError("LLMRouter needs at least one provider")
         self.providers = providers
+        self.lanes = [
+            Lane(
+                provider=p,
+                min_interval=(
+                    min_interval.get(p.name, 0.0)
+                    if isinstance(min_interval, dict)
+                    else min_interval
+                ),
+            )
+            for p in providers
+        ]
         self.cache = cache or ResponseCache()
         self.max_attempts_per_provider = max_attempts_per_provider
         self.backoff_seconds = backoff_seconds
+        self.max_wait_seconds = max_wait_seconds
         self.stats = RouterStats(by_provider=Counter())
+        self._stats_lock = threading.Lock()
 
     def generate(self, request: LLMRequest) -> LLMResponse:
-        """Answer a request from cache, or from the first provider that can."""
-        # The cache is keyed per model, so it is checked once per provider
-        # rather than once overall: a response cached from Groq is still a
-        # valid answer even when Gemini is the current primary.
-        for provider in self.providers:
-            cached = self.cache.get(request.cache_key(provider.model))
+        """Answer a request from cache, or from the first lane that can serve it."""
+        for lane in self.lanes:
+            cached = self.cache.get(request.cache_key(lane.provider.model))
             if cached is not None:
-                self.stats.cache_hits += 1
-                self.stats.by_provider[f"{cached.provider} (cached)"] += 1
+                with self._stats_lock:
+                    self.stats.cache_hits += 1
+                    self.stats.by_provider[f"{cached.provider} (cached)"] += 1
                 return cached
-        self.stats.cache_misses += 1
+        with self._stats_lock:
+            self.stats.cache_misses += 1
 
         failures: dict[str, str] = {}
-        for index, provider in enumerate(self.providers):
-            try:
-                response = self._call_with_retry(provider, request)
-            except ProviderError as exc:
-                failures[provider.name] = str(exc)
-                if index < len(self.providers) - 1:
-                    self.stats.failovers += 1
-                    log.warning(
-                        "%s unavailable (%s); falling back to %s",
-                        provider.name,
-                        type(exc).__name__,
-                        self.providers[index + 1].name,
-                    )
-                continue
+        waited = 0.0
 
-            self.cache.put(request.cache_key(provider.model), response)
-            self.stats.by_provider[provider.name] += 1
-            self.stats.prompt_tokens += response.prompt_tokens
-            self.stats.completion_tokens += response.completion_tokens
-            return response
+        while True:
+            rate_limited: dict[str, float] = {}
 
-        raise AllProvidersFailedError(failures)
+            for index, lane in enumerate(self.lanes):
+                cooldown = lane.wait_seconds(time.monotonic())
+                if cooldown > 0:
+                    rate_limited[lane.name] = cooldown
+                    continue
+                try:
+                    lane.reserve()
+                    response = self._call_with_retry(lane.provider, request)
+                except RateLimitedError as exc:
+                    delay = exc.retry_after or DEFAULT_COOLDOWN_SECONDS
+                    lane.cool_down(delay)
+                    rate_limited[lane.name] = delay
+                    failures[lane.name] = f"rate limited, retry in {delay:.0f}s"
+                    if index < len(self.lanes) - 1:
+                        with self._stats_lock:
+                            self.stats.failovers += 1
+                    continue
+                except ProviderError as exc:
+                    failures[lane.name] = str(exc)
+                    if index < len(self.lanes) - 1:
+                        with self._stats_lock:
+                            self.stats.failovers += 1
+                    continue
+
+                self.cache.put(request.cache_key(lane.provider.model), response)
+                with self._stats_lock:
+                    self.stats.by_provider[lane.provider.name] += 1
+                    self.stats.prompt_tokens += response.prompt_tokens
+                    self.stats.completion_tokens += response.completion_tokens
+                return response
+
+            # Nothing served. If it was only rate limits, the condition is
+            # temporary by definition - wait it out rather than losing the case.
+            if not rate_limited or waited >= self.max_wait_seconds:
+                raise AllProvidersFailedError(failures)
+
+            delay = min(max(1.0, min(rate_limited.values())), self.max_wait_seconds - waited)
+            waited += delay
+            with self._stats_lock:
+                self.stats.rate_limit_waits += 1
+                self.stats.seconds_waiting += delay
+            log.info(
+                "All lanes rate limited (%s); waiting %.0fs",
+                ", ".join(f"{n} {s:.0f}s" for n, s in rate_limited.items()),
+                delay,
+            )
+            time.sleep(delay)
 
     def _call_with_retry(self, provider: Provider, request: LLMRequest) -> LLMResponse:
         """Retry a provider a bounded number of times before giving up on it.
 
-        Transient 503s are common on free tiers and usually clear in seconds, so
-        a couple of attempts avoids a needless failover. The bound matters: an
-        unbounded retry would spend the daily quota on one bad request.
+        Transient 5xx responses are common on free tiers and usually clear in
+        seconds. Rate limits are *not* retried here - they are the router's
+        business, since another lane may be able to serve immediately.
         """
         last: ProviderError | None = None
         for attempt in range(1, self.max_attempts_per_provider + 1):
             try:
                 return provider.generate(request)
             except RateLimitedError:
-                # A spent quota will not clear in seconds. Fail over immediately
-                # rather than sleeping through a retry that cannot succeed.
                 raise
             except ProviderError as exc:
                 last = exc
                 if attempt < self.max_attempts_per_provider:
-                    delay = self.backoff_seconds * attempt
-                    log.debug(
-                        "%s attempt %d failed (%s); retrying in %.1fs",
-                        provider.name,
-                        attempt,
-                        exc,
-                        delay,
-                    )
-                    time.sleep(delay)
-        # Unreachable: the loop either returns or leaves `last` set.
+                    time.sleep(self.backoff_seconds * attempt)
         raise last if last else ProviderError(f"{provider.name} failed without an error")

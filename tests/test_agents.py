@@ -9,12 +9,13 @@ import pytest
 
 from precedent.agents.context import build_context
 from precedent.agents.prosecutor import Accusation, Prosecutor
-from precedent.agents.skeptic import SkepticVerdict
+from precedent.agents.skeptic import Skeptic, SkepticVerdict
 from precedent.eval.case import CaseOutcome
-from precedent.eval.harness import stats_from
+from precedent.eval.harness import EvalHarness, stats_from
+from precedent.eval.pool import AgentPool
 from precedent.llm.cache import ResponseCache
 from precedent.llm.router import LLMRouter
-from precedent.mutation.mutant import MutantSpec
+from precedent.mutation.mutant import MutantResult, MutantSpec
 from tests.conftest import FakeProvider
 
 SOURCE = '''\
@@ -202,3 +203,220 @@ class TestScoring:
 
     def test_accusation_failure_helper_is_unusable(self) -> None:
         assert not Accusation.failed("boom").usable
+
+
+class _FakeWorkspace:
+    """Stands in for a checkout. The stub Skeptic never touches disk."""
+
+    class _Repo:
+        def __truediv__(self, other: str) -> _FakeWorkspace._Path:
+            return _FakeWorkspace._Path()
+
+    class _Path:
+        def read_text(self, encoding: str = "utf-8") -> str:
+            return SOURCE
+
+    repo_dir = _Repo()
+
+
+class _StubRetrieval:
+    def block_for(self, result):  # type: ignore[no-untyped-def]
+        return "RETRIEVED CONTEXT: incident:abc", [{"citation": "incident:abc"}]
+
+
+@pytest.fixture
+def survivor() -> MutantResult:
+    return MutantResult(
+        spec=_spec(),
+        status="survived",
+        duration_seconds=0.1,
+        tests_passed=1,
+        tests_failed=0,
+        killing_test=None,
+        diff="@@ -1 +1 @@\n-a\n+b\n",
+    )
+
+
+class _StubProsecutor:
+    """Returns scripted accusations and records how it was called."""
+
+    def __init__(self, first: Accusation, revised: Accusation | None = None) -> None:
+        self.first = first
+        self.revised = revised
+        self.accuse_calls = 0
+        self.revise_calls = 0
+        self.revise_blocks: list[str] = []
+
+    def accuse(self, context, *, retrieval_block: str = ""):  # type: ignore[no-untyped-def]
+        self.accuse_calls += 1
+        return self.first
+
+    def revise(self, context, previous, failure_output, *, retrieval_block: str = ""):  # type: ignore[no-untyped-def]
+        self.revise_calls += 1
+        self.revise_blocks.append(retrieval_block)
+        return self.revised or self.first
+
+
+class _StubSkeptic:
+    """Returns scripted verdicts in order."""
+
+    def __init__(self, *verdicts: str) -> None:
+        self.verdicts = list(verdicts)
+        self.calls = 0
+
+    def adjudicate(self, workspace, spec, accusation):  # type: ignore[no-untyped-def]
+        self.calls += 1
+        verdict = self.verdicts[min(self.calls - 1, len(self.verdicts) - 1)]
+        return SkepticVerdict(verdict=verdict, reason=verdict)
+
+
+def _usable(name: str = "t") -> Accusation:
+    return Accusation(
+        hypothesis="h",
+        reasoning="r",
+        test_name=name,
+        test_code=f"def {name}():\n    assert True\n",
+        confident=True,
+        provider="fake",
+        model="fake",
+        cached=False,
+        latency_seconds=0.0,
+        raw="",
+    )
+
+
+class TestRepairLoop:
+    """One bounded repair attempt.
+
+    A test that does not run against the unchanged code says nothing about the
+    diff, and discarding it outright measures the model's first-draft syntax
+    rather than whether it understood the change. Real review agents iterate.
+
+    The bound matters just as much: an unbounded loop would let a model grind
+    against the library until something incidentally differs, which is a much
+    weaker claim than catching the regression. Both ablation arms get exactly
+    the same allowance, so it cannot inflate the delta.
+    """
+
+    @staticmethod
+    def _harness(prosecutor, skeptic, **kwargs):  # type: ignore[no-untyped-def]
+        return EvalHarness(prosecutor, skeptic, **kwargs)  # type: ignore[arg-type]
+
+    def _run(self, harness, result, monkeypatch=None):  # type: ignore[no-untyped-def]
+        return harness.run_one(_FakeWorkspace(), result)
+
+    def test_a_confirmed_test_is_never_repaired(self, survivor) -> None:  # type: ignore[no-untyped-def]
+        prosecutor = _StubProsecutor(_usable())
+        harness = self._harness(prosecutor, _StubSkeptic("confirmed"))
+        outcome = self._run(harness, survivor)
+        assert outcome.verdict == "confirmed"
+        assert outcome.repairs == 0
+        assert prosecutor.revise_calls == 0
+
+    def test_a_test_failing_on_the_original_gets_one_repair(self, survivor) -> None:  # type: ignore[no-untyped-def]
+        prosecutor = _StubProsecutor(_usable(), _usable("t2"))
+        harness = self._harness(
+            prosecutor, _StubSkeptic("rejected_invalid_on_original", "confirmed")
+        )
+        outcome = self._run(harness, survivor)
+        assert outcome.verdict == "confirmed"
+        assert outcome.repairs == 1
+        assert prosecutor.revise_calls == 1
+
+    def test_repairs_are_capped(self, survivor) -> None:  # type: ignore[no-untyped-def]
+        """Never more than max_repairs, however many times it keeps failing."""
+        prosecutor = _StubProsecutor(_usable(), _usable("t2"))
+        harness = self._harness(
+            prosecutor, _StubSkeptic("rejected_invalid_on_original"), max_repairs=1
+        )
+        outcome = self._run(harness, survivor)
+        assert outcome.repairs == 1
+        assert prosecutor.revise_calls == 1
+
+    def test_repair_can_be_disabled(self, survivor) -> None:  # type: ignore[no-untyped-def]
+        prosecutor = _StubProsecutor(_usable(), _usable("t2"))
+        harness = self._harness(
+            prosecutor, _StubSkeptic("rejected_invalid_on_original"), max_repairs=0
+        )
+        outcome = self._run(harness, survivor)
+        assert outcome.repairs == 0
+        assert prosecutor.revise_calls == 0
+
+    def test_a_non_discriminating_test_is_not_repaired(self, survivor) -> None:  # type: ignore[no-untyped-def]
+        """`no_difference` means the test ran fine and found nothing. Retrying
+        would be fishing for any difference at all, not repairing a broken
+        test - a materially weaker claim."""
+        prosecutor = _StubProsecutor(_usable(), _usable("t2"))
+        harness = self._harness(prosecutor, _StubSkeptic("no_difference", "confirmed"))
+        outcome = self._run(harness, survivor)
+        assert outcome.verdict == "no_difference"
+        assert prosecutor.revise_calls == 0
+
+    def test_a_review_rejection_is_not_repaired(self, survivor) -> None:  # type: ignore[no-untyped-def]
+        """The Skeptic judged the test meaningless. Rewriting it would be an
+        attempt to get around that judgement rather than to fix a broken test."""
+        prosecutor = _StubProsecutor(_usable(), _usable("t2"))
+        harness = self._harness(prosecutor, _StubSkeptic("rejected_by_review", "confirmed"))
+        outcome = self._run(harness, survivor)
+        assert outcome.verdict == "rejected_by_review"
+        assert prosecutor.revise_calls == 0
+
+    def test_the_repair_prompt_carries_the_same_retrieval_block(self, survivor) -> None:  # type: ignore[no-untyped-def]
+        """Otherwise the retrieval arm would silently lose its context on the
+        second attempt, understating what retrieval contributes."""
+        prosecutor = _StubProsecutor(_usable(), _usable("t2"))
+        harness = EvalHarness(  # type: ignore[arg-type]
+            prosecutor,
+            _StubSkeptic("rejected_invalid_on_original", "confirmed"),
+            retrieval=_StubRetrieval(),
+        )
+        self._run(harness, survivor)
+        assert prosecutor.revise_blocks == ["RETRIEVED CONTEXT: incident:abc"]
+
+
+class TestAgentPool:
+    """Deterministic model assignment.
+
+    Free-tier limits force the evaluation across four model lanes. Assignment
+    must depend only on the mutant id, so a mutant draws the same model in both
+    arms and is compared against itself.
+    """
+
+    @staticmethod
+    def _pool(n: int) -> AgentPool:
+        pairs = tuple(
+            (
+                Prosecutor(
+                    LLMRouter([FakeProvider(model=f"m{i}")], cache=ResponseCache(enabled=False))
+                ),
+                Skeptic(None, review_enabled=False),
+            )
+            for i in range(n)
+        )
+        return AgentPool(pairs=pairs)
+
+    def test_assignment_is_stable_across_runs(self) -> None:
+        pool = self._pool(4)
+        assert pool.model_for("0183c16f1ccd") == pool.model_for("0183c16f1ccd")
+
+    def test_assignment_does_not_depend_on_corpus_order(self) -> None:
+        """Hashing the id rather than using its position means filtering or
+        re-ordering the corpus cannot shift which model serves a mutant."""
+        pool = self._pool(4)
+        before = {m: pool.model_for(m) for m in ("aaa", "bbb", "ccc", "ddd")}
+        after = {m: pool.model_for(m) for m in ("ddd", "ccc", "bbb", "aaa")}
+        assert before == after
+
+    def test_work_is_spread_across_lanes(self) -> None:
+        pool = self._pool(4)
+        spread = pool.distribution([f"mutant{i:04d}" for i in range(400)])
+        assert len(spread) == 4
+        assert all(count > 40 for count in spread.values())
+
+    def test_a_single_lane_pool_always_returns_it(self) -> None:
+        pool = self._pool(1)
+        assert pool.index_for("anything") == 0
+
+    def test_an_empty_pool_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="at least one agent pair"):
+            AgentPool(pairs=())

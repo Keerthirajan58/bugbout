@@ -32,7 +32,11 @@ from precedent.eval.store import (
     load_eval,
     save_eval,
 )
-from precedent.llm.factory import NoProvidersConfiguredError, build_router
+from precedent.llm.factory import (
+    NoProvidersConfiguredError,
+    build_agent_pool,
+    build_router,
+)
 from precedent.mutation.runner import prepare_workers
 from precedent.mutation.store import load_survivors, run_path
 from precedent.paths import ensure_dirs
@@ -182,7 +186,13 @@ def eval_run(
     if limit:
         survivors = survivors[:limit]
 
-    prosecutor, skeptic = _build_agents(review)
+    try:
+        pool = build_agent_pool(load_settings(), review=review)
+    except NoProvidersConfiguredError as exc:
+        out.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    out.print(f"Model lanes: {', '.join(pool.models)}")
+
     retrieval = None
     if arm == ARM_WITH_RETRIEVAL:
         directory = kb_path(slug)
@@ -195,14 +205,14 @@ def eval_run(
         retrieval = KnowledgeBaseRetrieval(KnowledgeBase.load(directory), top_k=top_k)
         out.print(f"Retrieval enabled: {len(retrieval.kb)} documents, top-{top_k}")
 
-    harness = EvalHarness(prosecutor, skeptic, retrieval=retrieval)
+    harness = EvalHarness(*pool.pairs[0], retrieval=retrieval, pool=pool)
     journal = journal_path(slug, arm)
     if not resume:
         journal.unlink(missing_ok=True)
 
-    pool = prepare_workers(ws, workers)
+    checkouts = prepare_workers(ws, workers)
     out.print(
-        f"Evaluating [bold]{len(survivors)}[/bold] survivors on arm [bold]{arm}[/bold] across {len(pool)} checkout(s)\n"
+        f"Evaluating [bold]{len(survivors)}[/bold] survivors on arm [bold]{arm}[/bold] across {len(checkouts)} checkout(s)\n"
     )
 
     caught = {"n": 0}
@@ -222,7 +232,7 @@ def eval_run(
             progress.advance(task)
             progress.update(task, description=f"auditing ({caught['n']} confirmed)")
 
-        outcomes = harness.run(pool, survivors, journal=journal, on_result=on_result)
+        outcomes = harness.run(checkouts, survivors, journal=journal, on_result=on_result)
 
     stats = stats_from(outcomes)
     corpus_hash = _corpus_hash(slug)
@@ -231,13 +241,13 @@ def eval_run(
         arm,
         outcomes,
         mutation_run_hash=corpus_hash,
-        model=prosecutor.router.providers[0].model,
+        model=" + ".join(pool.models),
         freeze=freeze,
         allow_refreeze=allow_refreeze,
     )
     out.print(f"\n[bold]{target.full_name}[/bold] arm={arm}")
     out.print(f"  {stats.summary()}")
-    out.print(f"  {prosecutor.router.stats.summary()}")
+    out.print(f"  lanes:\n    {pool.combined_stats()}")
     out.print(f"  saved   {path}")
     out.print(f"  sha256  {digest[:16]}...{'  [frozen]' if freeze else ''}")
     if not freeze and arm == ARM_NO_RETRIEVAL:

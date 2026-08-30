@@ -17,9 +17,12 @@ class FakeProvider:
     error: Exception | None = None
     calls: int = 0
 
+    #: Raise ``error`` for the first N calls only, then serve ``responses``.
+    fail_first: int = 0
+
     def generate(self, request: LLMRequest) -> LLMResponse:
         self.calls += 1
-        if self.error is not None:
+        if self.error is not None and (self.fail_first == 0 or self.calls <= self.fail_first):
             raise self.error
         if not self.responses:
             raise ProviderError("fake provider has no scripted responses left")

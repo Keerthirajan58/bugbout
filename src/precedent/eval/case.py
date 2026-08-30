@@ -43,6 +43,9 @@ class CaseOutcome:
     prosecutor_latency: float = 0.0
     review_reason: str | None = None
 
+    repairs: int = 0
+    """How many repair attempts were spent before this verdict."""
+
     citation: dict[str, Any] | None = None
     """Phase 3 only: which retrieved item motivated the hypothesis."""
 
@@ -73,6 +76,7 @@ class CaseOutcome:
         accusation: Accusation,
         verdict: SkepticVerdict,
         retrieved: list[dict[str, Any]] | None = None,
+        repairs: int = 0,
     ) -> CaseOutcome:
         return cls(
             mutant_id=mutant_id,
@@ -95,6 +99,7 @@ class CaseOutcome:
             cached=accusation.cached,
             prosecutor_latency=accusation.latency_seconds,
             review_reason=verdict.review_reason,
+            repairs=repairs,
             citation=accusation.citation,
             retrieved=retrieved or [],
             error=accusation.error,

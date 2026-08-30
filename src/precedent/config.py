@@ -53,8 +53,11 @@ class Settings(BaseSettings):
     # --- agent models --------------------------------------------------------
     # Gemini is primary for its 1500 req/day free tier; Groq absorbs overflow
     # when Gemini returns 429, which is what makes the full eval feasible at $0.
-    gemini_model: str = "gemini-2.5-flash"
-    groq_model: str = "llama-3.3-70b-versatile"
+    # Measured against the live free tiers in August 2026. Gemini allows only
+    # 20 requests/day per model, so it is used for single-diff work; Groq's
+    # per-model buckets (8k tokens/min, 1k requests/day each) carry batch runs.
+    gemini_model: str = "gemini-3.7-flash"
+    groq_model: str = "openai/gpt-oss-120b"
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
     llm_max_output_tokens: int = Field(default=4096, gt=0)
 

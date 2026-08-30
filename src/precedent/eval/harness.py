@@ -24,6 +24,7 @@ from precedent.agents.context import build_context
 from precedent.agents.prosecutor import Accusation, Prosecutor
 from precedent.agents.skeptic import Skeptic, SkepticVerdict
 from precedent.eval.case import CaseOutcome
+from precedent.eval.pool import AgentPool
 from precedent.logging import get_logger
 from precedent.mutation.mutant import MutantResult
 from precedent.targets.workspace import TargetWorkspace
@@ -71,17 +72,31 @@ def stats_from(outcomes: list[CaseOutcome]) -> EvalStats:
 class EvalHarness:
     """Puts each surviving mutant through Prosecutor then Skeptic."""
 
+    # Verdicts where the test never ran correctly against the unchanged code.
+    # These say nothing about the diff, so one repair attempt is allowed.
+    REPAIRABLE = ("rejected_invalid_on_original", "rejected_error", "rejected_guard")
+
     def __init__(
         self,
         prosecutor: Prosecutor,
         skeptic: Skeptic,
         *,
         retrieval: RetrievalProvider | None = None,
+        max_repairs: int = 1,
+        pool: AgentPool | None = None,
     ) -> None:
         self.prosecutor = prosecutor
         self.skeptic = skeptic
+        # A pool spreads work across free-tier model lanes while keeping the
+        # per-mutant assignment identical in both arms. Without one, every
+        # mutant uses the same pair.
+        self.pool = pool or AgentPool.single(prosecutor, skeptic)
         # Phase 2 leaves this None. That is the ablation's control arm.
         self.retrieval = retrieval
+        # Bounded deliberately. An unbounded loop would let a model grind until
+        # something incidentally differs, which is a much weaker claim than
+        # catching the regression. Both arms get the same allowance.
+        self.max_repairs = max_repairs
 
     def run_one(self, workspace: TargetWorkspace, result: MutantResult) -> CaseOutcome:
         """Evaluate a single surviving mutant."""
@@ -111,8 +126,37 @@ class EvalHarness:
         if self.retrieval is not None:
             retrieval_block, retrieved = self.retrieval.block_for(result)
 
-        accusation = self.prosecutor.accuse(context, retrieval_block=retrieval_block)
-        verdict = self.skeptic.adjudicate(workspace, spec, accusation)
+        # Deterministic in the mutant id, so this mutant draws the same model in
+        # both arms and is compared against itself.
+        prosecutor, skeptic = self.pool.for_mutant(spec.mutant_id)
+
+        accusation = prosecutor.accuse(context, retrieval_block=retrieval_block)
+        verdict = skeptic.adjudicate(workspace, spec, accusation)
+
+        repairs = 0
+        while (
+            repairs < self.max_repairs and verdict.verdict in self.REPAIRABLE and accusation.usable
+        ):
+            repairs += 1
+            failure = (
+                verdict.original_result.tail(25)
+                if verdict.original_result is not None
+                else verdict.reason
+            )
+            revised = prosecutor.revise(
+                context, accusation, failure, retrieval_block=retrieval_block
+            )
+            if not revised.usable:
+                break
+            revised_verdict = skeptic.adjudicate(workspace, spec, revised)
+            # Keep the repair only if it actually improved matters; a revision
+            # that lands in the same bucket should not overwrite the record of
+            # the first attempt.
+            if revised_verdict.verdict not in self.REPAIRABLE:
+                accusation, verdict = revised, revised_verdict
+                break
+            accusation, verdict = revised, revised_verdict
+
         return CaseOutcome.build(
             mutant_id=spec.mutant_id,
             target_slug=spec.target_slug,
@@ -124,6 +168,7 @@ class EvalHarness:
             accusation=accusation,
             verdict=verdict,
             retrieved=retrieved,
+            repairs=repairs,
         )
 
     def run(

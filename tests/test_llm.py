@@ -177,3 +177,95 @@ class TestRouterFailover:
     def test_requires_at_least_one_provider(self) -> None:
         with pytest.raises(ValueError, match="at least one provider"):
             LLMRouter([])
+
+
+class TestRateLimitWaiting:
+    """Measured behaviour drove this design.
+
+    Groq's gpt-oss-120b allows 8,000 tokens per minute and a Prosecutor call
+    costs about 1,400 - roughly five calls a minute regardless of worker count.
+    An early pilot with four workers lost 29 of 32 requests, because the router
+    treated a rate limit as a dead end. It is a temporary condition with a
+    published reset window, so the router now waits it out.
+    """
+
+    def test_waits_and_retries_when_the_only_lane_is_rate_limited(
+        self, request_: LLMRequest, cache: ResponseCache
+    ) -> None:
+        provider = FakeProvider(
+            name="only",
+            responses=["ok"],
+            error=RateLimitedError("only", retry_after=0.01),
+            fail_first=1,
+        )
+        router = LLMRouter([provider], cache=cache, max_wait_seconds=5.0)
+        assert router.generate(request_).text == "ok"
+        assert router.stats.rate_limit_waits >= 1
+
+    def test_gives_up_after_the_wait_budget(
+        self, request_: LLMRequest, cache: ResponseCache
+    ) -> None:
+        """Bounded so a wedged run surfaces instead of hanging forever."""
+        provider = FakeProvider(name="p", error=RateLimitedError("p", retry_after=0.01))
+        router = LLMRouter([provider], cache=cache, max_wait_seconds=0.05)
+        with pytest.raises(AllProvidersFailedError):
+            router.generate(request_)
+
+    def test_a_healthy_lane_serves_while_another_cools_down(
+        self, request_: LLMRequest, cache: ResponseCache
+    ) -> None:
+        """Failover is what keeps the run moving; waiting is the last resort."""
+        limited = FakeProvider(name="limited", error=RateLimitedError("limited", retry_after=60))
+        healthy = FakeProvider(name="healthy", model="m2", responses=["ok"])
+        router = LLMRouter([limited, healthy], cache=cache)
+        assert router.generate(request_).provider == "healthy"
+        assert router.stats.rate_limit_waits == 0
+
+    def test_a_cooled_down_lane_is_skipped_without_calling_it(
+        self, request_: LLMRequest, cache: ResponseCache
+    ) -> None:
+        """Once a lane reports a 60s reset, hammering it again wastes quota."""
+        limited = FakeProvider(name="limited", error=RateLimitedError("limited", retry_after=60))
+        healthy = FakeProvider(name="healthy", model="m2", responses=["a", "b"])
+        router = LLMRouter([limited, healthy], cache=cache)
+        router.generate(request_)
+        router.generate(LLMRequest(system="s", user="different"))
+        assert limited.calls == 1
+
+    def test_non_rate_limit_failures_do_not_trigger_waiting(
+        self, request_: LLMRequest, cache: ResponseCache
+    ) -> None:
+        """A malformed request will never succeed; waiting on it burns time."""
+        router = LLMRouter(
+            [FakeProvider(name="p", error=ProviderError("bad request"))],
+            cache=cache,
+            max_attempts_per_provider=1,
+            max_wait_seconds=5.0,
+        )
+        with pytest.raises(AllProvidersFailedError):
+            router.generate(request_)
+        assert router.stats.rate_limit_waits == 0
+
+
+class TestPacing:
+    def test_min_interval_spaces_calls(self, request_: LLMRequest, cache: ResponseCache) -> None:
+        """Pacing keeps the run under the limit rather than repeatedly
+        rediscovering it with a failed request."""
+        import time
+
+        provider = FakeProvider(name="p", responses=["a", "b"])
+        router = LLMRouter([provider], cache=cache, min_interval=0.05)
+        started = time.monotonic()
+        router.generate(request_)
+        router.generate(LLMRequest(system="s", user="second"))
+        assert time.monotonic() - started >= 0.05
+
+    def test_per_provider_intervals_can_differ(self, cache: ResponseCache) -> None:
+        """Quotas are per model, so pacing has to be too."""
+        router = LLMRouter(
+            [FakeProvider(name="a", responses=["x"]), FakeProvider(name="b", model="m2")],
+            cache=cache,
+            min_interval={"a": 0.5, "b": 0.0},
+        )
+        assert router.lanes[0].min_interval == 0.5
+        assert router.lanes[1].min_interval == 0.0

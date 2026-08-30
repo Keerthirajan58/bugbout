@@ -8,6 +8,7 @@ is more code than issuing the request directly.
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any
 
@@ -23,7 +24,7 @@ from precedent.logging import get_logger
 
 log = get_logger(__name__)
 
-_TIMEOUT = httpx.Timeout(120.0, connect=10.0)
+_TIMEOUT = httpx.Timeout(240.0, connect=15.0)
 # Free tiers answer 429 when a quota is spent and 503 when capacity is short.
 # Both mean "ask someone else", which is different from a malformed request.
 _FAILOVER_STATUS = {429, 500, 502, 503, 504}
@@ -144,9 +145,30 @@ class GroqProvider:
         )
 
 
+_DURATION = re.compile(r"(?:(\d+(?:\.\d+)?)m)?(?:(\d+(?:\.\d+)?)s)?")
+
+
 def _retry_after(response: httpx.Response) -> float | None:
+    """How long the provider says to wait, in seconds.
+
+    Checked in order of specificity. Groq reports its own reset windows in
+    ``x-ratelimit-reset-*`` as durations like ``4.147s`` or ``7m12s``; honouring
+    those is far better than guessing, because the token-per-minute bucket is
+    what actually gates a long batch run.
+    """
     raw = response.headers.get("retry-after")
-    try:
-        return float(raw) if raw else None
-    except ValueError:
-        return None
+    if raw:
+        try:
+            return float(raw)
+        except ValueError:
+            pass
+    for header in ("x-ratelimit-reset-tokens", "x-ratelimit-reset-requests"):
+        value = response.headers.get(header)
+        if not value:
+            continue
+        match = _DURATION.fullmatch(value.strip())
+        if match and any(match.groups()):
+            minutes = float(match.group(1) or 0)
+            seconds = float(match.group(2) or 0)
+            return minutes * 60 + seconds
+    return None

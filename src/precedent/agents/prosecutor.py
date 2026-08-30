@@ -106,6 +106,19 @@ class Accusation:
         )
 
 
+REPAIR_PROMPT = """\
+Your previous regression test did not run correctly against the ORIGINAL, \
+UNCHANGED code. It must PASS there before it can be evidence about the change.
+
+Read the failure below and fix the test. Common causes: importing a name that \
+does not exist, calling the API with the wrong signature, or asserting behaviour \
+the library never had. Keep the same hypothesis if it is still sound; abandon it \
+by setting "confident" to false if the failure shows it was wrong.
+
+Respond with JSON only, in exactly the same shape as before.
+"""
+
+
 class Prosecutor:
     """Turns a diff into a candidate regression test."""
 
@@ -138,9 +151,61 @@ class Prosecutor:
             json_output=True,
         )
 
+    def revise(
+        self,
+        context: DiffContext,
+        previous: Accusation,
+        failure_output: str,
+        *,
+        retrieval_block: str = "",
+    ) -> Accusation:
+        """One chance to repair a test that failed against the unchanged code.
+
+        A test that does not run says nothing about the change, and discarding
+        it outright measures the model's first-draft syntax rather than whether
+        it understood the diff. Real review agents iterate, so one bounded
+        repair attempt is both fairer and more representative.
+
+        It is bounded at one attempt deliberately: an unbounded loop would let a
+        model grind against the library until something incidentally differs,
+        which is a different (and much weaker) claim than catching the
+        regression. The same allowance is given to both ablation arms.
+        """
+        base = self.build_request(context, retrieval_block=retrieval_block)
+        user = "\n".join(
+            [
+                base.user,
+                "",
+                REPAIR_PROMPT,
+                f"YOUR PREVIOUS HYPOTHESIS: {previous.hypothesis}",
+                "",
+                "YOUR PREVIOUS TEST:",
+                "```python",
+                previous.test_code.strip(),
+                "```",
+                "",
+                "HOW IT FAILED ON THE ORIGINAL, UNCHANGED CODE:",
+                "```",
+                failure_output.strip()[-1500:],
+                "```",
+            ]
+        )
+        return self._generate(
+            LLMRequest(
+                system=SYSTEM_PROMPT,
+                user=user,
+                temperature=self.temperature,
+                max_output_tokens=self.max_output_tokens,
+                json_output=True,
+            ),
+            context,
+        )
+
     def accuse(self, context: DiffContext, *, retrieval_block: str = "") -> Accusation:
         """Produce an accusation, or a recorded failure."""
-        request = self.build_request(context, retrieval_block=retrieval_block)
+        return self._generate(self.build_request(context, retrieval_block=retrieval_block), context)
+
+    def _generate(self, request: LLMRequest, context: DiffContext) -> Accusation:
         try:
             response = self.router.generate(request)
         except Exception as exc:  # one bad call must not stop a 454-mutant run
