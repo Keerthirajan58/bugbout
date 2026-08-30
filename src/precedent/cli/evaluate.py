@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -316,6 +317,25 @@ def eval_ablation(
     out.print(table)
     delta = b["catch_rate"] - a["catch_rate"]
     out.print(f"\n  [bold]delta {delta:+.1%}[/bold]  ({b['caught'] - a['caught']:+d} mutants)")
+
+
+@eval_app.command("export")
+def eval_export(
+    destination: Annotated[
+        str, typer.Option("--out", help="Where to write the dashboard payload.")
+    ] = "dashboard/data/results.json",
+) -> None:
+    """Write the static JSON the dashboard reads.
+
+    The deployed page needs no API keys, no database and no pipeline run - every
+    case record already carries the diff, the retrieved context, the debate and
+    the verdict.
+    """
+    from precedent.eval.export import export
+
+    path, count = export(Path(destination))
+    size = path.stat().st_size / 1024
+    out.print(f"[green]Exported[/green] {count} cases to {path} ({size:.0f} KB)")
 
 
 def _corpus_hash(slug: str) -> str:

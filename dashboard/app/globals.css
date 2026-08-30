@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+/* Design tokens. Light values live on bare :root; dark is declared under both
+   the OS media query and an explicit data-theme scope so a toggle wins either
+   way. Series colours are the validated categorical slots 1 and 2. */
+:root {
+  --surface-0: #f7f7f5;
+  --surface-1: #fcfcfb;
+  --surface-2: #f0f0ed;
+  --border: #e0e0da;
+  --text-primary: #0b0b0b;
+  --text-secondary: #52514e;
+  --text-muted: #7b7a74;
+  --series-without: #eb6834;
+  --series-with: #2a78d6;
+  --good: #1a7f4b;
+  --bad: #b3341f;
+  --code-bg: #f4f4f1;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --surface-0: #131312;
+    --surface-1: #1a1a19;
+    --surface-2: #232322;
+    --border: #333330;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #8f8e85;
+    --series-without: #d95926;
+    --series-with: #3987e5;
+    --good: #4ab97e;
+    --bad: #e8735c;
+    --code-bg: #202020;
+  }
+}
+
+:root[data-theme="dark"] {
+  --surface-0: #131312;
+  --surface-1: #1a1a19;
+  --surface-2: #232322;
+  --border: #333330;
+  --text-primary: #ffffff;
+  --text-secondary: #c3c2b7;
+  --text-muted: #8f8e85;
+  --series-without: #d95926;
+  --series-with: #3987e5;
+  --good: #4ab97e;
+  --bad: #e8735c;
+  --code-bg: #202020;
+}
+
+html { color-scheme: light dark; }
+
+body {
+  background: var(--surface-0);
+  color: var(--text-primary);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+code, pre { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+/* Wide content scrolls inside its own container; the page never scrolls sideways. */
+.scroll-x { overflow-x: auto; }
