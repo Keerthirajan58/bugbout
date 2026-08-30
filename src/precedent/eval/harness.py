@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import threading
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
@@ -218,7 +218,7 @@ class EvalHarness:
         if journal:
             journal.parent.mkdir(parents=True, exist_ok=True)
 
-        shards = [pending[i :: len(workspaces)] for i in range(len(workspaces))]
+        shards = self._shard(pending, len(workspaces))
         with ThreadPoolExecutor(max_workers=len(workspaces)) as pool:
             futures = {
                 pool.submit(self._run_shard, workspace, shard, journal, on_result): workspace
@@ -229,6 +229,35 @@ class EvalHarness:
                 outcomes.extend(future.result())
 
         return _ordered(outcomes, survivors)
+
+    def _shard(self, pending: list[MutantResult], workers: int) -> list[list[MutantResult]]:
+        """Split work across workers, aligning each worker to one model lane.
+
+        Round-robin sharding wastes most of the available throughput. Lanes are
+        paced (~11s between calls) to stay under the token-per-minute limit, so
+        a worker whose next mutant belongs to a busy lane simply sleeps - it
+        cannot skip ahead to other work. Measured on the real run, that left
+        73% of lane capacity idle.
+
+        Grouping by lane removes the cross-blocking: each worker only ever waits
+        on its own lane's pacing, which it would have to wait for anyway. When
+        there are more workers than lanes, several workers share a lane and
+        overlap their sandbox execution while the lane paces the API calls.
+        """
+        lanes = len(self.pool.pairs)
+        if lanes <= 1 or workers < lanes:
+            return [pending[i::workers] for i in range(workers)]
+
+        by_lane: dict[int, list[MutantResult]] = defaultdict(list)
+        for result in pending:
+            by_lane[self.pool.index_for(result.spec.mutant_id)].append(result)
+
+        shards: list[list[MutantResult]] = [[] for _ in range(workers)]
+        for lane, items in by_lane.items():
+            owners = [w for w in range(workers) if w % lanes == lane] or [lane]
+            for index, item in enumerate(items):
+                shards[owners[index % len(owners)]].append(item)
+        return shards
 
     def _run_shard(
         self,

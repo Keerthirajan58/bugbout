@@ -182,3 +182,48 @@ class TestContaminationGuard:
         monkeypatch.setattr(TargetWorkspace, "restore_all", lambda self: restored.append(True))
         assert workspace.ensure_clean() is True
         assert restored == [True]
+
+
+class TestReadinessMarker:
+    """A workspace is ready only when the target is actually installed.
+
+    An install that fails part-way leaves both the venv and the checkout in
+    place, so checking for those alone reports a broken workspace as usable.
+    That happened during the phase 2 run: a background shell without `uv` on
+    PATH fell back to a stdlib venv whose pip was too old for PEP 660 editable
+    installs, and the half-built workspace would have been handed straight to
+    the evaluator - producing collection errors indistinguishable from results.
+    """
+
+    def test_not_ready_without_the_marker(
+        self, workspace: TargetWorkspace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        workspace.root.mkdir(parents=True, exist_ok=True)
+        monkeypatch.setattr(type(workspace.python), "exists", lambda self: True)
+        assert not workspace.is_ready()
+
+    def test_marker_must_match_the_pinned_commit(self, workspace: TargetWorkspace) -> None:
+        """A workspace built for a different commit is not a usable workspace
+        for this one, even though every file is present."""
+        workspace.root.mkdir(parents=True, exist_ok=True)
+        workspace._marker.write_text("0" * 40, encoding="utf-8")
+        assert not workspace.is_ready()
+
+    def test_missing_marker_is_not_an_error(self, workspace: TargetWorkspace) -> None:
+        assert workspace.is_ready() is False
+
+
+class TestExecutableDiscovery:
+    def test_finds_tools_outside_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Non-interactive shells often have a minimal PATH. Silently falling
+        back to a worse toolchain is how the broken workspace above happened."""
+        from precedent.targets import workspace as module
+
+        monkeypatch.setattr(module.shutil, "which", lambda _: None)
+        found = module._find("definitely-not-a-real-binary-xyz")
+        assert found is None
+
+    def test_returns_path_when_available(self) -> None:
+        from precedent.targets.workspace import _find
+
+        assert _find("git") is not None

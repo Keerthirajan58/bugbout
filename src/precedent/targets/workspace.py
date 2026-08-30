@@ -103,20 +103,42 @@ def _parse_counts(output: str) -> dict[str, int]:
     return counts
 
 
+# Tools installed for the user rather than system-wide are often absent from a
+# non-interactive shell's PATH. A background run that silently falls back to a
+# worse toolchain is exactly how the w6 workspace above got half-built.
+_EXTRA_BIN_DIRS = (
+    Path.home() / ".local" / "bin",
+    Path("/opt/homebrew/bin"),
+    Path("/usr/local/bin"),
+)
+
+
+def _find(executable: str) -> str | None:
+    """Locate an executable, looking beyond PATH into common install dirs."""
+    found = shutil.which(executable)
+    if found:
+        return found
+    for directory in _EXTRA_BIN_DIRS:
+        candidate = directory / executable
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def _resolve(executable: str) -> str:
     """Absolute path to a required executable, or a clear error naming it.
 
     Resolving up front means a missing tool fails immediately with a usable
     message, rather than as an opaque ``FileNotFoundError`` mid-run.
     """
-    path = shutil.which(executable)
+    path = _find(executable)
     if path is None:
         raise WorkspaceError(f"{executable!r} is required but was not found on PATH.")
     return path
 
 
 def _uv_available() -> bool:
-    return shutil.which("uv") is not None
+    return _find("uv") is not None
 
 
 class TargetWorkspace:
@@ -158,8 +180,26 @@ class TargetWorkspace:
     def test_dir(self) -> Path:
         return self.repo_dir / self.target.test_root
 
+    @property
+    def _marker(self) -> Path:
+        """Written only after a successful install, and holding the pinned SHA."""
+        return self.root / ".precedent-ready"
+
     def is_ready(self) -> bool:
-        return self.python.exists() and (self.repo_dir / ".git").exists()
+        """Whether this workspace is genuinely usable.
+
+        Checking only that a venv and a checkout exist is not enough: an install
+        that failed part-way leaves both in place, and the workspace would then
+        be handed out with the target package missing - producing collection
+        errors that look like mutation results. The marker is written only after
+        a successful install, and records the commit it was built for.
+        """
+        if not (self.python.exists() and (self.repo_dir / ".git").exists()):
+            return False
+        try:
+            return self._marker.read_text(encoding="utf-8").strip() == self.target.commit
+        except OSError:
+            return False
 
     # --- preparation ---------------------------------------------------------
 
@@ -233,8 +273,16 @@ class TargetWorkspace:
                 *packages,
             ]
         else:
+            # A stdlib venv can ship a pip too old for PEP 660, which fails on
+            # any pyproject-only project with a misleading "setup.py not found".
+            self._run(
+                [str(self.python), "-m", "pip", "install", "--quiet", "--upgrade", "pip"],
+                cwd=self.root,
+                what="pip upgrade",
+            )
             cmd = [str(self.python), "-m", "pip", "install", "--quiet", *packages]
         self._run(cmd, cwd=self.root, what="dependency install")
+        self._marker.write_text(self.target.commit, encoding="utf-8")
 
     # --- execution -----------------------------------------------------------
 
