@@ -35,6 +35,40 @@ Both are pinned to immutable commit SHAs, because the "with retrieval" and
 | [marshmallow](https://github.com/marshmallow-code/marshmallow) | `4.3.1` | 1,819 | 98% | 1.4s | MIT |
 | [arrow](https://github.com/arrow-py/arrow) | `1.4.0` | 2,315 | 99.9% | 9.8s | Apache-2.0 |
 
+## Ground truth (phase 1)
+
+Mutation testing supplies the objective baseline. Small, plausible bugs are
+injected into each target and the repo's own suite is run against every one. A
+mutant the suite catches is *killed*; one that slips through **survived** — a
+change that passes the entire test suite and is still wrong. Survivors are the
+corpus Precedent is evaluated on.
+
+| Target | Line coverage | Mutants | Kill-rate | Survivors |
+|---|---|---|---|---|
+| marshmallow 4.3.1 | 98% | 920 | 87.5% | 115 |
+| arrow 1.4.0 | 99.9% | 1,690 | 79.9% | 339 |
+| **combined** | | **2,610** | | **454** |
+
+Note the second row against the first. **Arrow has higher line coverage and a
+lower kill-rate.** Coverage asks whether a line executed; mutation asks whether
+anyone would notice if that line were wrong. Arrow's suite runs essentially
+every line and still fails to detect one change in five. That gap is the reason
+this project's ground truth is mutation-based rather than coverage-based, and
+those 454 survivors are the evaluation corpus.
+
+30 of cosmic-ray's 213 operators are used, chosen to match mistakes people and
+coding agents actually make — boundary slips, inverted conditions, flipped
+defaults, off-by-one constants. Every inclusion and exclusion is justified in
+[`operators.py`](src/precedent/mutation/operators.py), and the same set is used
+in both arms of the ablation so operator choice cannot move the headline number.
+
+```bash
+precedent mutants generate marshmallow   # enumerate, run nothing
+precedent mutants run marshmallow -w 6   # score every mutant
+precedent mutants report marshmallow     # the saved summary
+precedent mutants survivors marshmallow  # the corpus
+```
+
 ## Quickstart
 
 ```bash
@@ -56,7 +90,7 @@ key it asks for has a free tier and needs no credit card.
 | Phase | State |
 |---|---|
 | 0 — scaffold, pinned targets, CI | done |
-| 1 — mutation harness + ground truth | in progress |
+| 1 — mutation harness + ground truth | done |
 | 2 — Prosecutor + Skeptic, no retrieval (frozen baseline) | pending |
 | 3 — RAG layer + ablation delta | pending |
 | 4 — dashboard | pending |
