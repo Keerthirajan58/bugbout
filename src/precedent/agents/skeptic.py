@@ -54,22 +54,31 @@ Verdict = Literal[
 ]
 
 REVIEW_SYSTEM_PROMPT = """\
-You are auditing another engineer's regression test. It has already been executed \
-and provably passes on the original code and fails on the changed code.
+You are auditing another engineer's regression test. It has ALREADY been executed \
+and provably passes on the original code and fails on the changed code. A real \
+behavioural difference is therefore established as fact - that is not in question.
 
-Your only question: does this test demonstrate a MEANINGFUL BEHAVIOURAL difference \
-that a user of this library could actually observe?
+Your ONLY question is whether that difference is one a user of this library could \
+actually observe and would consider a bug.
 
-Reject it if:
-- it asserts on private internals or implementation details rather than behaviour;
+REJECT only if:
+- the test asserts on private internals or implementation details rather than on \
+behaviour reachable through the library's API;
 - it is tautological, or merely restates the change;
-- it depends on ordering, identity, timing or memory addresses that were never
-  guaranteed;
-- the stated hypothesis is not what the test actually checks.
+- it depends on object identity, memory addresses, dict ordering, timing or other \
+things the library never guaranteed;
+- the "difference" is an artefact of the test itself rather than of the code.
 
-Accept it if a user of this library could hit this and would consider it a bug.
+ACCEPT otherwise.
 
-Be strict. A false accusation is worse than a missed one. Respond with JSON only:
+IMPORTANT - do NOT reject because the stated hypothesis mispredicted the mechanism. \
+If the author expected a TypeError and the code instead returned a wrong value, the \
+regression was still caught: an incorrect result is usually a WORSE bug than an \
+exception, because nothing announces it. Execution has already proven the behaviour \
+differs. Judge the difference, not the author's prose.
+
+Be strict about the four rejection criteria and lenient about everything else. \
+Respond with JSON only:
 {"verdict": "accept" | "reject", "reason": "one sentence"}
 """
 

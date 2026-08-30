@@ -47,6 +47,21 @@ class EvalStats:
     by_verdict: dict[str, int]
 
     @property
+    def execution_confirmed(self) -> int:
+        """Cases where running the test proved a behavioural difference.
+
+        Reported alongside the headline figure because it separates the two
+        things the Skeptic does: execution establishes that behaviour differs,
+        and review judges whether that difference matters. Publishing only the
+        stricter number would hide how much the reviewer is discarding.
+        """
+        return self.caught + self.by_verdict.get("rejected_by_review", 0)
+
+    @property
+    def execution_rate(self) -> float:
+        return self.execution_confirmed / self.total if self.total else 0.0
+
+    @property
     def catch_rate(self) -> float:
         """Fraction of surviving mutants the agent pair proved a regression in.
 
@@ -58,7 +73,11 @@ class EvalStats:
 
     def summary(self) -> str:
         breakdown = ", ".join(f"{k}={v}" for k, v in Counter(self.by_verdict).most_common())
-        return f"catch-rate {self.catch_rate:.1%} ({self.caught}/{self.total}) | {breakdown}"
+        return (
+            f"catch-rate {self.catch_rate:.1%} ({self.caught}/{self.total}) | "
+            f"execution-confirmed {self.execution_rate:.1%} "
+            f"({self.execution_confirmed}/{self.total}) | {breakdown}"
+        )
 
 
 def stats_from(outcomes: list[CaseOutcome]) -> EvalStats:

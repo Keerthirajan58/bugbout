@@ -60,6 +60,8 @@ def save_eval(
             "total": stats.total,
             "caught": stats.caught,
             "catch_rate": round(stats.catch_rate, 6),
+            "execution_confirmed": stats.execution_confirmed,
+            "execution_rate": round(stats.execution_rate, 6),
             "by_verdict": stats.by_verdict,
         },
         "cases": [o.to_dict() for o in outcomes],

@@ -69,6 +69,49 @@ precedent mutants report marshmallow     # the saved summary
 precedent mutants survivors marshmallow  # the corpus
 ```
 
+## The knowledge base (phase 3)
+
+Mined entirely from each repository's own local clone — no GitHub API quota, no
+rate limits, works offline.
+
+| Document kind | marshmallow | arrow | What it contributes |
+|---|---|---|---|
+| incidents + reverts | 337 | 138 | what has actually broken here before |
+| AST code chunks | 295 | 267 | complete functions, never fixed-size windows |
+| call sites | 85 | 73 | how a symbol is actually reached |
+| **total** | **717** | **462** | |
+
+Search fuses BM25 and embedding *ranks* rather than averaging their scores —
+BM25 is unbounded and corpus-dependent, cosine is bounded, and any common scale
+drifts as documents are added. Scope (same symbol, same file, past defect) is an
+explicit boost, because relevance to *this* symbol is a structural fact rather
+than a textual similarity.
+
+```bash
+precedent kb build marshmallow          # mine, chunk, embed, index
+precedent kb risk marshmallow           # most historically fragile symbols
+precedent kb context marshmallow <id>   # exactly what the Prosecutor is handed
+```
+
+## Running on free tiers
+
+Every provider limit here was measured, not assumed:
+
+| Provider | Measured free-tier limit | Used for |
+|---|---|---|
+| Gemini | **20 requests/day per model** (8 models work) | single-diff `precedent verify` |
+| Groq | **8,000 tokens/min + 1,000 requests/day per model**, 4 models | batch evaluation |
+
+A Prosecutor call costs ~1,400 tokens, so one Groq model sustains ~5.7 calls/min
+and four sustain ~22 — the difference between an hour and a day and a half for
+the full evaluation.
+
+Spreading work across models would normally wreck the comparison, so each mutant
+is assigned a model by **hashing its id**: the same mutant draws the same model
+in both arms and is compared against itself. That makes the result stronger, not
+weaker — an improvement holding across four independently-trained models is
+harder to dismiss than one model's quirk.
+
 ## Quickstart
 
 ```bash
@@ -91,8 +134,8 @@ key it asks for has a free tier and needs no credit card.
 |---|---|
 | 0 — scaffold, pinned targets, CI | done |
 | 1 — mutation harness + ground truth | done |
-| 2 — Prosecutor + Skeptic, no retrieval (frozen baseline) | pending |
-| 3 — RAG layer + ablation delta | pending |
+| 2 — Prosecutor + Skeptic, no retrieval (frozen baseline) | running |
+| 3 — RAG layer + ablation delta | retrieval built, measurement pending |
 | 4 — dashboard | pending |
 | 5 — packaging, GitHub Action, cached demos | pending |
 
