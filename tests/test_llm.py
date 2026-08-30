@@ -269,3 +269,54 @@ class TestPacing:
         )
         assert router.lanes[0].min_interval == 0.5
         assert router.lanes[1].min_interval == 0.0
+
+
+class TestCacheDoesNotOverrideModelChoice:
+    """Cache residue must not decide which model answers.
+
+    The router originally scanned every lane's cache before calling anything,
+    so a cached answer from *any* model satisfied the request. In a phase 3 run
+    that silently routed 111 of 115 cases to one model regardless of the lane
+    they were assigned, because that model happened to hold cache entries -
+    wrecking the paired comparison the ablation depends on.
+    """
+
+    def test_prefers_the_first_lane_over_a_later_lanes_cache(
+        self, request_: LLMRequest, cache: ResponseCache
+    ) -> None:
+        preferred = FakeProvider(name="p", model="preferred", responses=["fresh"])
+        other = FakeProvider(name="p", model="other")
+        # A cached answer exists, but for the *second* lane's model.
+        cache.put(
+            request_.cache_key("other"),
+            LLMResponse(text="stale", provider="p", model="other"),
+        )
+        router = LLMRouter([preferred, other], cache=cache)
+        response = router.generate(request_)
+        assert response.model == "preferred"
+        assert response.text == "fresh"
+
+    def test_still_uses_the_cache_for_the_preferred_model(
+        self, request_: LLMRequest, cache: ResponseCache
+    ) -> None:
+        provider = FakeProvider(name="p", model="preferred")
+        cache.put(
+            request_.cache_key("preferred"),
+            LLMResponse(text="cached", provider="p", model="preferred"),
+        )
+        router = LLMRouter([provider], cache=cache)
+        assert router.generate(request_).text == "cached"
+        assert provider.calls == 0
+
+    def test_a_later_lanes_cache_is_used_when_the_first_is_unavailable(
+        self, request_: LLMRequest, cache: ResponseCache
+    ) -> None:
+        """Falling back is still better than losing the case."""
+        first = FakeProvider(name="p", model="first", error=RateLimitedError("p", retry_after=600))
+        second = FakeProvider(name="p", model="second")
+        cache.put(
+            request_.cache_key("second"),
+            LLMResponse(text="cached", provider="p", model="second"),
+        )
+        router = LLMRouter([first, second], cache=cache)
+        assert router.generate(request_).model == "second"

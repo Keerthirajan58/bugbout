@@ -154,23 +154,34 @@ class LLMRouter:
 
     def generate(self, request: LLMRequest) -> LLMResponse:
         """Answer a request from cache, or from the first lane that can serve it."""
-        for lane in self.lanes:
-            cached = self.cache.get(request.cache_key(lane.provider.model))
-            if cached is not None:
-                with self._stats_lock:
-                    self.stats.cache_hits += 1
-                    self.stats.by_provider[f"{cached.provider} (cached)"] += 1
-                return cached
-        with self._stats_lock:
-            self.stats.cache_misses += 1
-
         failures: dict[str, str] = {}
+        counted_miss = False
         waited = 0.0
 
         while True:
             rate_limited: dict[str, float] = {}
 
             for index, lane in enumerate(self.lanes):
+                # The cache is consulted lane by lane, in preference order,
+                # rather than scanned across every lane up front.
+                #
+                # Scanning up front let a cached answer from ANY model satisfy
+                # the request, which silently overrode model selection: in one
+                # phase 3 run, 111 of 115 cases came back from a single model
+                # regardless of which lane they were routed to, purely because
+                # that model happened to hold a cache entry. Model choice is
+                # part of the experiment and cannot be decided by cache residue.
+                cached = self.cache.get(request.cache_key(lane.provider.model))
+                if cached is not None:
+                    with self._stats_lock:
+                        self.stats.cache_hits += 1
+                        self.stats.by_provider[f"{cached.provider} (cached)"] += 1
+                    return cached
+                if not counted_miss:
+                    counted_miss = True
+                    with self._stats_lock:
+                        self.stats.cache_misses += 1
+
                 cooldown = lane.wait_seconds(time.monotonic())
                 if cooldown > 0:
                     rate_limited[lane.name] = cooldown
