@@ -159,3 +159,26 @@ class TestLayout:
 
     def test_is_not_ready_before_preparation(self, workspace: TargetWorkspace) -> None:
         assert not workspace.is_ready()
+
+
+class TestContaminationGuard:
+    """A run killed mid-mutant leaves the mutated file on disk, because the
+    restoring `finally` never runs. Without this guard the next run scores
+    every mutant on top of that stale mutation - and still reports a
+    plausible-looking kill-rate. This actually happened during phase 1: five
+    worker checkouts were left modified by an interrupted arrow run."""
+
+    def test_clean_workspace_needs_no_repair(
+        self, workspace: TargetWorkspace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(TargetWorkspace, "is_clean", lambda self: True)
+        assert workspace.ensure_clean() is False
+
+    def test_dirty_workspace_is_restored(
+        self, workspace: TargetWorkspace, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        restored: list[bool] = []
+        monkeypatch.setattr(TargetWorkspace, "is_clean", lambda self: False)
+        monkeypatch.setattr(TargetWorkspace, "restore_all", lambda self: restored.append(True))
+        assert workspace.ensure_clean() is True
+        assert restored == [True]

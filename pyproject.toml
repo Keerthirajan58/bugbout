@@ -28,6 +28,8 @@ dependencies = [
     # transport + resilience
     "httpx>=0.28",
     "tenacity>=9.0",
+    # mutation engine: standard operator taxonomy + format-preserving parso AST
+    "cosmic-ray>=8.7",
 ]
 
 [project.optional-dependencies]
@@ -88,7 +90,7 @@ warn_unreachable = true
 files = ["src/precedent"]
 
 [[tool.mypy.overrides]]
-module = ["rank_bm25.*", "fastembed.*", "pgvector.*", "groq.*", "google.genai.*"]
+module = ["rank_bm25.*", "fastembed.*", "pgvector.*", "groq.*", "google.genai.*", "cosmic_ray.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

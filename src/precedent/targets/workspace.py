@@ -122,9 +122,18 @@ def _uv_available() -> bool:
 class TargetWorkspace:
     """An isolated checkout of one :class:`TargetRepo`, with its own virtualenv."""
 
-    def __init__(self, target: TargetRepo, root: Path | None = None) -> None:
+    def __init__(
+        self,
+        target: TargetRepo,
+        root: Path | None = None,
+        clone_source: str | Path | None = None,
+    ) -> None:
         self.target = target
         self.root = (root or workspaces_dir()) / target.slug
+        # Parallel mutation workers each need their own checkout, since they
+        # rewrite source files in place. Cloning them from an already-prepared
+        # local workspace avoids re-downloading the repo once per worker.
+        self.clone_source = str(clone_source) if clone_source else target.clone_url
 
     # --- locations -----------------------------------------------------------
 
@@ -177,9 +186,9 @@ class TargetWorkspace:
         if (self.repo_dir / ".git").exists():
             log.debug("Reusing clone at %s", self.repo_dir)
         else:
-            log.info("Cloning %s", self.target.full_name)
+            log.info("Cloning %s from %s", self.target.full_name, self.clone_source)
             self._run(
-                [_resolve("git"), "clone", "--quiet", self.target.clone_url, str(self.repo_dir)],
+                [_resolve("git"), "clone", "--quiet", self.clone_source, str(self.repo_dir)],
                 cwd=self.root,
                 what="git clone",
             )
@@ -385,6 +394,27 @@ class TargetWorkspace:
             what="git restore",
         )
         self._run([_resolve("git"), "clean", "--quiet", "-fd"], cwd=self.repo_dir, what="git clean")
+
+    def ensure_clean(self) -> bool:
+        """Restore the checkout if a previous run left it modified.
+
+        This matters more than it looks. A run killed mid-mutant (Ctrl-C, an
+        OOM, a crashed worker) leaves the mutated file on disk, because the
+        restoring ``finally`` never gets to run. The next run would then score
+        every one of its mutants on top of that stale mutation - and would
+        still complete, still print a kill-rate, and still be wrong.
+
+        Returns True if a repair was needed.
+        """
+        if self.is_clean():
+            return False
+        log.warning(
+            "Workspace %s was left modified by an interrupted run; restoring "
+            "before scoring so results are not contaminated.",
+            self.repo_dir,
+        )
+        self.restore_all()
+        return True
 
     def is_clean(self) -> bool:
         """Whether the checkout has no uncommitted modifications."""
