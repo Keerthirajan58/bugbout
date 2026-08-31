@@ -56,7 +56,7 @@ class Document:
         """Short, stable label the Prosecutor uses to cite this item."""
         return f"[{self.kind}:{self.doc_id}]"
 
-    def render(self, max_body: int = 1200) -> str:
+    def render(self, max_body: int = 340) -> str:
         """Human- and model-readable form for the prompt."""
         body = (
             self.body if len(self.body) <= max_body else self.body[:max_body] + "\n... (truncated)"

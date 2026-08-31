@@ -52,6 +52,7 @@ setting "confident" to false. A wrong accusation is worse than no accusation.
 
 Respond with JSON only, matching this shape exactly:
 {
+  "used_evidence": "what the supplied evidence told you, or 'nothing relevant' (omit if none was supplied)",
   "hypothesis": "one sentence: what observably differs, and for which input",
   "reasoning": "two or three sentences explaining why the change causes it",
   "test_name": "test_something_descriptive",

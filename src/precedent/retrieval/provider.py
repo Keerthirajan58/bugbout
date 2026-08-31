@@ -27,15 +27,30 @@ from precedent.retrieval.index import KnowledgeBase, ScoredDocument
 log = get_logger(__name__)
 
 INSTRUCTION = """\
-RETRIEVED CONTEXT FROM THIS REPOSITORY'S OWN HISTORY
+EVIDENCE FROM THIS REPOSITORY'S OWN HISTORY
 
-These are real past defects, reverts, call sites and related code from this \
-codebase, retrieved because they concern the code this diff touches. Use them to \
-make your hypothesis specific to THIS codebase rather than generically plausible.
+Below are real past defects, reverts, call sites and related code from this \
+codebase, retrieved because they concern the code the diff touches.
 
-You MUST set "citation" in your response to the identifier in square brackets of \
-the item that motivated your hypothesis, e.g. "citation": "incident:8bb5feb6931a". \
-If none of them informed you, set it to null and say so - do not invent one.
+Read them BEFORE forming your hypothesis, and use them like a reviewer who \
+remembers this codebase would:
+
+- a past defect tells you which inputs have actually broken this code before;
+- a call site tells you how the function is really reached, and with what \
+argument shapes - so your test exercises a realistic path instead of a guessed one;
+- a code chunk tells you what the surrounding API actually does, so your test \
+does not assert behaviour the library never had.
+
+TWO RULES
+
+1. You are testing THE DIFF. This evidence exists to sharpen your hypothesis \
+about the diff - never to redirect you onto a historical bug that the diff does \
+not touch.
+2. Set "used_evidence" to a one-sentence statement of what these items told you, \
+or to "nothing relevant" if none applied. Then set "citation" to the identifier \
+in square brackets of the item you relied on, e.g. "incident:8bb5feb6931a", or \
+null if none did. Never invent a citation - an honest "nothing relevant" is more \
+useful than a fabricated one.
 """
 
 

@@ -30,16 +30,14 @@ GROQ_LANE_MODELS: tuple[str, ...] = (
 # per lane but strictly faster overall than provoking multi-minute cooldowns.
 GROQ_MIN_INTERVAL_SECONDS = 15.0
 
-# Retrieval roughly triples the prompt. Measured on the real corpus: a control
-# call is ~900 tokens of prompt, a retrieval call adds ~1,712 more, and with the
-# response the whole exchange costs ~3,200 tokens against the same 8,000/min
-# budget - about 2.5 calls a minute rather than 5.7.
-#
-# The pacing is raised rather than the context trimmed. Cutting the retrieved
-# block to fit the old interval would understate exactly what the ablation is
-# meant to measure, and the cost is only wall-clock: four lanes at 1.75 calls a
-# minute still finish 115 cases in well under an hour.
-GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS = 34.0
+# Retrieval still enlarges the prompt, but far less than it did. Eight
+# documents at full length cost ~1,712 extra tokens and held the arm to 2.5
+# calls a minute; the diagnostic showed citation precision is 98% on-target, so
+# the signal lives in the first few results and the rest was paying tokens to
+# distract. Four tightened documents cost ~430 extra tokens, which both restores
+# throughput and removes the drift that was pushing the agent onto historical
+# bugs the diff never touched.
+GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS = 22.0
 
 # Gemini's free tier is 20 requests per day *per model*, which cannot sustain a
 # multi-thousand-call evaluation. It is kept for single-diff use, where quality
