@@ -206,7 +206,11 @@ class LLMRouter:
                     lane.reserve()
                     response = self._call_with_retry(lane.provider, request)
                 except RateLimitedError as exc:
-                    delay = exc.retry_after or DEFAULT_COOLDOWN_SECONDS
+                    # Cap here as well as in cool_down(): the wait loop below
+                    # sleeps for whatever lands in `rate_limited`, so recording
+                    # the provider's raw hint made the cap useless - lanes were
+                    # parked for 120s but the run still slept for 362s.
+                    delay = min(exc.retry_after or DEFAULT_COOLDOWN_SECONDS, MAX_COOLDOWN_SECONDS)
                     lane.cool_down(delay)
                     rate_limited[lane.name] = delay
                     failures[lane.name] = f"rate limited, retry in {delay:.0f}s"

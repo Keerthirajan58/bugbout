@@ -11,6 +11,7 @@ from rich.console import Console
 from rich.table import Table
 
 from precedent import __version__
+from precedent.cli.demo import demo_app
 from precedent.cli.evaluate import eval_app, verify
 from precedent.cli.kb import kb_app
 from precedent.cli.mutants import mutants_app
@@ -31,6 +32,7 @@ app.add_typer(targets_app)
 app.add_typer(mutants_app)
 app.add_typer(kb_app)
 app.add_typer(eval_app)
+app.add_typer(demo_app)
 app.command()(verify)
 
 out = Console()
