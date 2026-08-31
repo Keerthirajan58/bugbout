@@ -38,6 +38,17 @@ class TargetRepo:
     test_dependencies: tuple[str, ...] = field(default_factory=tuple)
     """Packages the suite imports that installing the project alone won't provide."""
 
+    extra_pytest_args: tuple[str, ...] = field(default_factory=tuple)
+    """Test-selection flags this repo needs, restored after ``addopts`` is cleared.
+
+    Clearing ``addopts`` is what stops a repo's coverage gate from deciding a
+    mutant's fate, but some projects also use it for legitimate *selection*.
+    click marks 31,000 stress tests and deselects them by default with
+    ``-m 'not stress'``; stripping that turns a 2.5s suite into one that does
+    not finish. Gates are dropped, selection is preserved - and preserved
+    explicitly here, per target, rather than by trying to parse a repo's config.
+    """
+
     historical_source_roots: tuple[str, ...] = field(default_factory=tuple)
     """Paths the package lived at earlier in its history.
 
@@ -140,6 +151,9 @@ CLICK = TargetRepo(
     source_root="src/click",
     test_root="tests",
     test_dependencies=("pytest",),
+    # click deselects 31,000 stress tests by default; without this the suite
+    # never finishes.
+    extra_pytest_args=("-m", "not stress"),
     selection_rationale=(
         "4,863 statements at 85% coverage with a 2.5s suite, and the most reverts of any "
         "candidate examined (22). CLI argument parsing is dense with boundary conditions - "
@@ -157,7 +171,14 @@ JSONSCHEMA = TargetRepo(
     spdx_license="MIT",
     source_root="jsonschema",
     test_root="jsonschema/tests",
-    test_dependencies=("pytest", "attrs", "referencing", "rpds-py", "jsonschema-specifications"),
+    test_dependencies=(
+        "pytest",
+        "attrs",
+        "referencing",
+        "rpds-py",
+        "jsonschema-specifications",
+        "jsonpath-ng",
+    ),
     selection_rationale=(
         "A validator implementing a written specification, so correctness is externally "
         "defined rather than a matter of taste. Validation logic fails silently by "
@@ -175,7 +196,14 @@ LOGURU = TargetRepo(
     spdx_license="MIT",
     source_root="loguru",
     test_root="tests",
-    test_dependencies=("pytest", "pytest-mock", "freezegun", "colorama"),
+    test_dependencies=(
+        "pytest",
+        "pytest-mock",
+        "freezegun",
+        "colorama",
+        "pytest-mypy-plugins",
+        "mypy",
+    ),
     selection_rationale=(
         "Logging is the canonical place where a regression goes unnoticed: output still "
         "appears, just wrong - a dropped field, a mangled level, a filter that stops "

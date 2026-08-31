@@ -227,3 +227,31 @@ class TestExecutableDiscovery:
         from precedent.targets.workspace import _find
 
         assert _find("git") is not None
+
+
+class TestSelectionFlagsSurviveAddoptsClearing:
+    """Clearing `addopts` must drop coverage gates without dropping selection.
+
+    click marks 31,000 stress tests and deselects them by default via
+    `addopts = -m 'not stress'`. Stripping that wholesale turned a 2.5s suite
+    into one that never finished - the baseline verification ran for over ten
+    minutes with no output before this was caught.
+    """
+
+    def test_selection_flags_are_restored(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        ws = TargetWorkspace(get_target("click"), root=tmp_path)
+        cmd = ws.pytest_command()
+        # `python -m pytest` also contains "-m", so match the flag/value pair.
+        pairs = list(zip(cmd, cmd[1:], strict=False))
+        assert ("-m", "not stress") in pairs
+
+    def test_addopts_is_still_cleared(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        """The coverage gate must still go."""
+        ws = TargetWorkspace(get_target("click"), root=tmp_path)
+        cmd = ws.pytest_command()
+        assert cmd[cmd.index("-o") + 1] == "addopts="
+
+    def test_targets_without_selection_flags_are_unchanged(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
+        cmd = TargetWorkspace(get_target("marshmallow"), root=tmp_path).pytest_command()
+        pairs = list(zip(cmd, cmd[1:], strict=False))
+        assert not [p for p in pairs if p[0] == "-m" and p[1] != "pytest"]

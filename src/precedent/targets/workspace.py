@@ -328,6 +328,9 @@ class TargetWorkspace:
             "--no-header",
             "-q",
         ]
+        # Restore the target's own test-selection flags, which clearing
+        # addopts removed along with its coverage gates.
+        cmd.extend(self.target.extra_pytest_args)
         if fail_fast:
             # For mutation scoring only the first failure matters, and stopping
             # there is the single largest speedup available.
