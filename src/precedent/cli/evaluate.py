@@ -393,6 +393,73 @@ def eval_ablation(
             )
 
 
+@eval_app.command("diagnose")
+def eval_diagnose(
+    slug: Annotated[str, typer.Argument(help="Target slug.")],
+    arm: Annotated[str, typer.Option("--arm")] = ARM_WITH_RETRIEVAL,
+) -> None:
+    """Show where cases are lost and how much headroom each mode has.
+
+    The ablation says whether retrieval helped. This says why, and bounds what
+    further retrieval work could be worth - so effort goes where the measured
+    ceiling is, not where intuition points.
+    """
+    from precedent.eval.diagnose import FAILURE_MODES, diagnose
+
+    try:
+        control = load_eval(slug, ARM_NO_RETRIEVAL)["cases"]
+        other = load_eval(slug, arm)["cases"]
+    except ArtifactError as exc:
+        out.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+
+    d = diagnose(control, other)
+    out.print(f"\n[bold]{slug}[/bold]  {d.paired} mutants in both arms")
+    out.print(
+        f"  control caught {d.control_caught} ({d.control_caught / d.paired:.1%})  ->  "
+        f"{arm} caught {d.other_caught} ({d.other_caught / d.paired:.1%})\n"
+    )
+
+    table = Table(title="control-arm misses, and what happened to them", show_header=True)
+    table.add_column("Control verdict")
+    table.add_column("Missed", justify="right")
+    table.add_column("Recovered", justify="right")
+    table.add_column("Rate", justify="right")
+    table.add_column("Retrieval can address?")
+    for mode in d.modes:
+        info = FAILURE_MODES.get(mode.mode, {})
+        flag = "[green]yes[/green]" if info.get("retrieval_addressable") else "[dim]no[/dim]"
+        table.add_row(
+            mode.mode, str(mode.count), str(mode.recovered), f"{mode.recovery_rate:.0%}", flag
+        )
+    out.print(table)
+
+    out.print("\n[bold]Headroom[/bold]")
+    out.print(f"  still missed, retrieval-addressable    {d.addressable_remaining}")
+    out.print(f"  still missed, not retrieval-addressable {d.unaddressable_remaining}")
+    out.print(
+        f"  ceiling if every addressable miss were recovered: "
+        f"[bold]{d.ceiling:.1%}[/bold] (currently {d.other_caught / d.paired:.1%})"
+    )
+
+    out.print("\n[bold]Is retrieval being used?[/bold]")
+    if d.retrieval_used:
+        out.print(f"  cases given retrieved context   {d.retrieval_used}/{d.paired}")
+        out.print(
+            f"  cases citing a retrieved item   {d.retrieval_cited} "
+            f"({d.retrieval_cited / d.paired:.0%})"
+        )
+        out.print(f"  cited and caught                {d.cited_and_caught}")
+        if d.retrieval_cited:
+            out.print(
+                f"  citation on-target (same file or symbol) "
+                f"{d.citation_on_target}/{d.retrieval_cited} "
+                f"({d.citation_on_target / d.retrieval_cited:.0%})  <- retrieval precision"
+            )
+    else:
+        out.print("  [dim]this arm had no retrieval[/dim]")
+
+
 @eval_app.command("export")
 def eval_export(
     destination: Annotated[
