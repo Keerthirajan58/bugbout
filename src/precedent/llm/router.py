@@ -48,6 +48,16 @@ MAX_WAIT_SECONDS = 2700.0
 # Used when a provider rate-limits without saying for how long.
 DEFAULT_COOLDOWN_SECONDS = 30.0
 
+# Longest a lane is ever parked, regardless of what the provider suggests.
+#
+# Providers quote the reset of their *widest* window: Groq answered a 429 with
+# a 2169s hint while the per-minute token bucket refilled in seconds, and one
+# model reported a 7-hour reset while still holding 708 of 1000 requests.
+# Honouring those literally parked healthy lanes for hours - the single largest
+# cause of stalled runs in this project. Re-probing after two minutes costs one
+# rejected request and recovers the lane as soon as it is actually usable.
+MAX_COOLDOWN_SECONDS = 120.0
+
 
 class AllProvidersFailedError(RuntimeError):
     """Every configured provider refused or failed."""
@@ -88,9 +98,15 @@ class Lane:
             time.sleep(delay)
 
     def cool_down(self, seconds: float) -> None:
-        """Mark the lane unusable for a while after a rate limit."""
+        """Park the lane briefly after a rate limit, then re-probe.
+
+        The provider's hint is capped: it describes the reset of whichever
+        window was hit, which is often far wider than the one that will
+        actually clear. Waiting it out literally is how a run loses hours.
+        """
         with self._lock:
-            self._available_at = max(self._available_at, time.monotonic() + seconds)
+            delay = min(seconds, MAX_COOLDOWN_SECONDS)
+            self._available_at = max(self._available_at, time.monotonic() + delay)
 
 
 @dataclass
