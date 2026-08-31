@@ -88,6 +88,7 @@ def build_agent_pool(
     review: bool = True,
     models: tuple[str, ...] | None = None,
     min_interval: float | None = None,
+    allow_fallback: bool = False,
 ) -> AgentPool:
     """Build one agent pair per model lane, for batch evaluation.
 
@@ -119,9 +120,18 @@ def build_agent_pool(
     interval = min_interval if min_interval is not None else GROQ_MIN_INTERVAL_SECONDS
     pairs = []
     for index in range(len(lane_models)):
-        # Own model first, then the rest in rotation, so lanes prefer distinct
-        # models but no lane is ever a dead end.
+        # Own model first, then the rest in rotation.
+        #
+        # Fallback is OFF by default for evaluation, and that default was
+        # chosen the hard way. With fallback on, a rate-limited lane skips to
+        # the next model - and because that model already holds cache entries,
+        # it answers instantly and therefore always wins. Three separate phase 3
+        # runs were routed to a single model this way (110-111 of 115 cases),
+        # which silently destroyed the paired comparison the ablation depends
+        # on. Waiting is slower; producing the wrong number is worse.
         ordered = lane_models[index:] + lane_models[:index]
+        if not allow_fallback:
+            ordered = ordered[:1]
         providers: list[Provider] = [GroqProvider(key, model=m) for m in ordered]
         router = LLMRouter(providers, cache=cache, min_interval=interval)
         pairs.append(_pair(router, settings, review))

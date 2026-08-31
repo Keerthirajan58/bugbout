@@ -197,7 +197,11 @@ def eval_run(
         else GROQ_MIN_INTERVAL_SECONDS
     )
     try:
-        pool = build_agent_pool(load_settings(), review=review, min_interval=interval)
+        # No cross-model fallback: model identity must stay constant between
+        # arms, and a lane that waits is preferable to a comparison that drifts.
+        pool = build_agent_pool(
+            load_settings(), review=review, min_interval=interval, allow_fallback=False
+        )
     except NoProvidersConfiguredError as exc:
         out.print(f"[red]{exc}[/red]")
         raise typer.Exit(1) from exc
