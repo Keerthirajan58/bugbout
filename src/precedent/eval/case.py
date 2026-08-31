@@ -46,8 +46,11 @@ class CaseOutcome:
     repairs: int = 0
     """How many repair attempts were spent before this verdict."""
 
-    citation: dict[str, Any] | None = None
+    citation: str | None = None
     """Phase 3 only: which retrieved item motivated the hypothesis."""
+
+    used_evidence: str = ""
+    """Phase 3 only: the Prosecutor's own account of what the evidence told it."""
 
     retrieved: list[dict[str, Any]] = field(default_factory=list)
     """Phase 3 only: the context supplied to the Prosecutor."""
@@ -101,6 +104,7 @@ class CaseOutcome:
             review_reason=verdict.review_reason,
             repairs=repairs,
             citation=accusation.citation,
+            used_evidence=accusation.used_evidence,
             retrieved=retrieved or [],
             error=accusation.error,
         )

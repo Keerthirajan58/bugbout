@@ -15,6 +15,7 @@ purely additive - the phase 2 baseline stays exactly as it was measured.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -62,6 +63,28 @@ Respond with JSON only, matching this shape exactly:
 """
 
 
+# A citation may arrive in its own field, or embedded in prose. Models asked
+# for both a narrative field and a separate id routinely merge them - observed
+# on the real corpus: `used_evidence` read
+# "code_chunk:adbccc069e34 showed original indexing behavior of pop" with the
+# `citation` field omitted entirely, which read as 0% engagement when in fact
+# every case was engaging. Grounding is measured from the response, so the
+# parser has to accept both shapes.
+_CITATION = re.compile(r"\b(incident|revert|call_site|code_chunk):([0-9a-f]{8,16})\b")
+
+
+def _extract_citation(payload: dict[str, Any]) -> str | None:
+    """Find a document reference in the response, wherever the model put it."""
+    direct = payload.get("citation")
+    if isinstance(direct, str) and (match := _CITATION.search(direct)):
+        return f"{match.group(1)}:{match.group(2)}"
+    for key in ("citation", "used_evidence", "reasoning", "hypothesis"):
+        value = payload.get(key)
+        if isinstance(value, str) and (match := _CITATION.search(value)):
+            return f"{match.group(1)}:{match.group(2)}"
+    return None
+
+
 @dataclass(frozen=True, slots=True)
 class Accusation:
     """The Prosecutor's output for one diff."""
@@ -77,8 +100,11 @@ class Accusation:
     latency_seconds: float
     raw: str
     error: str | None = None
-    citation: dict[str, Any] | None = None
-    """Populated in phase 3 only: which retrieved item motivated the hypothesis."""
+    citation: str | None = None
+    """Phase 3 only: the retrieved item that motivated the hypothesis."""
+
+    used_evidence: str = ""
+    """Phase 3 only: the Prosecutor's own statement of what the evidence told it."""
 
     @property
     def usable(self) -> bool:
@@ -245,5 +271,6 @@ class Prosecutor:
             cached=response.cached,
             latency_seconds=response.latency_seconds,
             raw=response.text,
-            citation=payload.get("citation"),
+            citation=_extract_citation(payload),
+            used_evidence=str(payload.get("used_evidence") or ""),
         )
