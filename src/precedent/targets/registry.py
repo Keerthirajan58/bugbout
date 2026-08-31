@@ -125,7 +125,85 @@ ARROW = TargetRepo(
     ),
 )
 
-TARGETS: dict[str, TargetRepo] = {t.slug: t for t in (MARSHMALLOW, ARROW)}
+# --- expansion set -----------------------------------------------------------
+# Added so the corpus spans six repositories rather than two. Mutation testing
+# needs no API quota, so breadth here costs CPU time only - which is exactly the
+# right trade when free-tier LLM throughput is the scarce resource.
+
+CLICK = TargetRepo(
+    slug="click",
+    owner="pallets",
+    name="click",
+    ref="8.5.0",
+    commit="8b19813f2bfca99f1018a587a8cf54fc959f2e5d",
+    spdx_license="BSD-3-Clause",
+    source_root="src/click",
+    test_root="tests",
+    test_dependencies=("pytest",),
+    selection_rationale=(
+        "4,863 statements at 85% coverage with a 2.5s suite, and the most reverts of any "
+        "candidate examined (22). CLI argument parsing is dense with boundary conditions - "
+        "option counts, nargs, type coercion - where an off-by-one changes behaviour for "
+        "one input and nothing else, which is the regression shape this project targets."
+    ),
+)
+
+JSONSCHEMA = TargetRepo(
+    slug="jsonschema",
+    owner="python-jsonschema",
+    name="jsonschema",
+    ref="v4.26.0",
+    commit="a7277432b0f7bcd0551f6e589d30457017125df4",
+    spdx_license="MIT",
+    source_root="jsonschema",
+    test_root="jsonschema/tests",
+    test_dependencies=("pytest", "attrs", "referencing", "rpds-py", "jsonschema-specifications"),
+    selection_rationale=(
+        "A validator implementing a written specification, so correctness is externally "
+        "defined rather than a matter of taste. Validation logic fails silently by "
+        "construction - an accepted document that should have been rejected produces no "
+        "error anywhere - which makes surviving mutants unusually meaningful."
+    ),
+)
+
+LOGURU = TargetRepo(
+    slug="loguru",
+    owner="Delgan",
+    name="loguru",
+    ref="0.7.3",
+    commit="ae3bfd1b85b6b4a3db535f69b975687c79498be4",
+    spdx_license="MIT",
+    source_root="loguru",
+    test_root="tests",
+    test_dependencies=("pytest", "pytest-mock", "freezegun", "colorama"),
+    selection_rationale=(
+        "Logging is the canonical place where a regression goes unnoticed: output still "
+        "appears, just wrong - a dropped field, a mangled level, a filter that stops "
+        "filtering. Heavy formatting and filtering logic gives mutation plenty of surface, "
+        "and the suite is fast."
+    ),
+)
+
+ATTRS = TargetRepo(
+    slug="attrs",
+    owner="python-attrs",
+    name="attrs",
+    ref="26.1.0",
+    commit="7bfc49e9b22d5ba25b6e429524c3d49fee27cb36",
+    spdx_license="MIT",
+    source_root="src/attr",
+    test_root="tests",
+    test_dependencies=("pytest", "hypothesis"),
+    selection_rationale=(
+        "Class-generation metaprogramming, with 24 reverts in its history - the most of any "
+        "candidate. Its output is other code, so a mutation changes the classes users get "
+        "rather than a value they inspect, and the failure surfaces far from its cause."
+    ),
+)
+
+TARGETS: dict[str, TargetRepo] = {
+    t.slug: t for t in (MARSHMALLOW, ARROW, CLICK, JSONSCHEMA, LOGURU, ATTRS)
+}
 
 
 class UnknownTargetError(KeyError):

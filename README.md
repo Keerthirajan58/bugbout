@@ -1,145 +1,187 @@
 # Precedent
 
-**An adversarial, retrieval-grounded code verification agent.**
+**An adversarial code-verification agent — and a measurement of whether
+retrieval actually helps it.**
 
-Most AI coding-agent demos show an agent completing a task. Precedent does the
-opposite and rarer thing: it tries to prove another agent's code change is
-unsafe. It takes a diff, retrieves what has actually gone wrong in *this*
-codebase before, writes a regression test targeting that specific failure mode,
-and then verifies the test by executing it against pre- and post-diff code in a
-sandbox. A test only counts once execution proves a real behavioural difference.
-
-> **Headline result:** mutation kill-rate without retrieval vs. with retrieval.
-> _Measured in phase 3 — this section is filled in from the frozen artifacts in
-> `data/artifacts/`, never by hand._
+Most AI coding-agent projects show an agent completing a task. This one does the
+opposite and rarer thing: it tries to prove another change is unsafe, and its
+verdict comes from **executing code**, never from a model's opinion.
 
 ---
 
-## How it works
+## The headline
+
+> **The agent proves a regression in 53% of code changes that defeat
+> marshmallow's entire 1,188-test suite.**
+>
+> **Retrieval did not improve that. Measured: 52.4% → 48.8% (−3.7 points) on 82
+> mutants, with the model held constant per mutant and the control arm frozen
+> under a SHA-256 hash before the retrieval arm was ever run.**
+
+The second number is the one worth reading. The retrieval layer works — 98% of
+its citations point at the file or symbol the diff touches — and it still did
+not make the agent better. That result is reported as measured, not tuned away.
+
+---
+
+## What it does
 
 ```
-diff -> risk retrieval (macro)  -> where is this repo historically fragile?
-     -> context retrieval (micro) -> hybrid BM25 + embedding search, AST-chunked
-     -> Prosecutor  -> hypothesises a break, writes a test, cites its source
-     -> Skeptic     -> runs it against both trees; only execution counts
-     -> verdict + citation
+diff ──▶ risk retrieval (macro)    where is this repo historically fragile?
+     ──▶ context retrieval (micro) hybrid BM25 + embeddings over AST chunks
+     ──▶ Prosecutor                one hypothesis, one test, cite the evidence
+     ──▶ Skeptic                   run it on BOTH trees; execution decides
+     ──▶ verdict
 ```
 
-## Targets under audit
+Two agents, named for the courtroom. The **Prosecutor** accuses: it forms one
+specific hypothesis about how behaviour changed and writes a pytest test to
+expose it. The **Skeptic** refuses to take its word — it executes that test
+against the original and the changed code, and counts it only if a real
+behavioural difference is proven.
 
-Both are pinned to immutable commit SHAs, because the "with retrieval" and
-"without retrieval" arms must measure the same tree.
+---
 
-| Repo | Pin | Statements | Coverage | Suite | License |
-|---|---|---|---|---|---|
-| [marshmallow](https://github.com/marshmallow-code/marshmallow) | `4.3.1` | 1,819 | 98% | 1.4s | MIT |
-| [arrow](https://github.com/arrow-py/arrow) | `1.4.0` | 2,315 | 99.9% | 9.8s | Apache-2.0 |
+## Ground truth
 
-## Ground truth (phase 1)
+Objectivity comes from mutation testing, not from asking a model to grade
+itself. Small, plausible bugs are injected; a mutant the suite catches is
+*killed*, one that slips through **survived** — a change that passes every test
+and is still wrong.
 
-Mutation testing supplies the objective baseline. Small, plausible bugs are
-injected into each target and the repo's own suite is run against every one. A
-mutant the suite catches is *killed*; one that slips through **survived** — a
-change that passes the entire test suite and is still wrong. Survivors are the
-corpus Precedent is evaluated on.
-
-| Target | Line coverage | Mutants | Kill-rate | Survivors |
+| Repo | Coverage | Mutants | Suite kill-rate | Survivors |
 |---|---|---|---|---|
 | marshmallow 4.3.1 | 98% | 920 | 87.5% | 115 |
-| arrow 1.4.0 | 99.9% | 1,690 | 79.9% | 339 |
-| **combined** | | **2,610** | | **454** |
+| arrow 1.4.0 | **99.9%** | 1,690 | 79.9% | 339 |
+| **total** | | **2,610** | | **454** |
 
 Note the second row against the first. **Arrow has higher line coverage and a
-lower kill-rate.** Coverage asks whether a line executed; mutation asks whether
-anyone would notice if that line were wrong. Arrow's suite runs essentially
-every line and still fails to detect one change in five. That gap is the reason
-this project's ground truth is mutation-based rather than coverage-based, and
-those 454 survivors are the evaluation corpus.
+lower kill-rate.** Coverage asks whether a line ran; mutation asks whether
+anyone would notice if it were wrong. Arrow's suite executes essentially every
+line and still misses one change in five — which is why ground truth here is
+mutation-based.
 
-30 of cosmic-ray's 213 operators are used, chosen to match mistakes people and
-coding agents actually make — boundary slips, inverted conditions, flipped
-defaults, off-by-one constants. Every inclusion and exclusion is justified in
-[`operators.py`](src/precedent/mutation/operators.py), and the same set is used
-in both arms of the ablation so operator choice cannot move the headline number.
+---
 
-```bash
-precedent mutants generate marshmallow   # enumerate, run nothing
-precedent mutants run marshmallow -w 6   # score every mutant
-precedent mutants report marshmallow     # the saved summary
-precedent mutants survivors marshmallow  # the corpus
-```
+## The experiment
 
-## The knowledge base (phase 3)
+Both arms run the identical corpus, agents, and models. They differ in exactly
+one respect: whether the repository's own history is appended to the
+Prosecutor's prompt. A unit test asserts that.
 
-Mined entirely from each repository's own local clone — no GitHub API quota, no
-rate limits, works offline.
-
-| Document kind | marshmallow | arrow | What it contributes |
-|---|---|---|---|
-| incidents + reverts | 337 | 138 | what has actually broken here before |
-| AST code chunks | 295 | 267 | complete functions, never fixed-size windows |
-| call sites | 85 | 73 | how a symbol is actually reached |
-| **total** | **717** | **462** | |
-
-Search fuses BM25 and embedding *ranks* rather than averaging their scores —
-BM25 is unbounded and corpus-dependent, cosine is bounded, and any common scale
-drifts as documents are added. Scope (same symbol, same file, past defect) is an
-explicit boost, because relevance to *this* symbol is a structural fact rather
-than a textual similarity.
-
-```bash
-precedent kb build marshmallow          # mine, chunk, embed, index
-precedent kb risk marshmallow           # most historically fragile symbols
-precedent kb context marshmallow <id>   # exactly what the Prosecutor is handed
-```
-
-## Running on free tiers
-
-Every provider limit here was measured, not assumed:
-
-| Provider | Measured free-tier limit | Used for |
+| Arm | Caught | Rate |
 |---|---|---|
-| Gemini | **20 requests/day per model** (8 models work) | single-diff `precedent verify` |
-| Groq | **8,000 tokens/min + 1,000 requests/day per model**, 4 models | batch evaluation |
+| without retrieval | 43/82 | 52.4% |
+| with retrieval | 40/82 | 48.8% |
 
-A Prosecutor call costs ~1,400 tokens, so one Groq model sustains ~5.7 calls/min
-and four sustain ~22 — the difference between an hour and a day and a half for
-the full evaluation.
+Three invariants make the comparison mean something:
 
-Spreading work across models would normally wreck the comparison, so each mutant
-is assigned a model by **hashing its id**: the same mutant draws the same model
-in both arms and is compared against itself. That makes the result stronger, not
-weaker — an improvement holding across four independently-trained models is
-harder to dismiss than one model's quirk.
+- **Same code** — targets pinned to immutable commit SHAs, enforced by a test.
+- **Same mutants** — one operator set, hashed and recorded in both artifacts.
+- **Same model per mutant** — assignment seeded from the control arm, and the
+  model that actually served is recorded, so pairing is *verified* rather than
+  assumed.
+
+The control arm was **frozen** the moment it was produced: a `.sha256` sidecar,
+a refusal to overwrite, and verification on read. It could not be quietly
+re-run once the retrieval number was known.
+
+### Why retrieval didn't help
+
+The diagnostic (`precedent eval diagnose`) locates the failure precisely:
+
+| Measurement | Value |
+|---|---|
+| Citation precision (cited item concerns the diff's file or symbol) | **98%** |
+| Cases where the agent engaged with the evidence | 45% |
+| `rejected_invalid_on_original`, control → retrieval | **7 → 16** |
+
+The layer finds the right documents. The agent reads them. It then writes tests
+that are *more* often wrong about the library — extra context led to more
+elaborate tests that missed the API. This is a conversion failure, not a
+retrieval failure, which is why improving ranking would have been wasted effort.
+
+---
 
 ## Quickstart
 
 ```bash
 git clone https://github.com/Keerthirajan58/precedent.git && cd precedent
-python3.12 -m venv RagAgent && ./RagAgent/bin/pip install -e ".[dev]"
+python3.12 -m venv RagAgent && ./RagAgent/bin/pip install -e ".[dev,llm,rag]"
 
-./RagAgent/bin/precedent doctor              # what's installed, what's missing
-./RagAgent/bin/precedent targets list        # the pinned repos and why
-./RagAgent/bin/precedent targets prepare marshmallow
-./RagAgent/bin/precedent targets verify marshmallow   # gate: suite must be green
+precedent doctor                      # what's installed, what's missing
+precedent demo list                   # curated examples, no API key needed
+precedent demo show marshmallow 1     # walk one end to end
 ```
 
-No API keys are needed for the scaffold or the mutation harness. Copy
-`.env.example` to `.env` when you reach the agent and retrieval phases; every
-key it asks for has a free tier and needs no credit card.
+The demos read committed artifacts — no network, no key, no pipeline run. A
+demo that can be rate-limited is not a demo.
 
-## Project status
+To reproduce from scratch:
 
-| Phase | State |
+```bash
+precedent targets prepare marshmallow      # pinned checkout + isolated venv
+precedent targets verify  marshmallow      # gate: the suite must be green
+precedent mutants run     marshmallow -w 6 # ground truth
+precedent kb build        marshmallow      # mine history, chunk, embed, index
+precedent eval run        marshmallow --arm no_retrieval --freeze
+precedent eval run        marshmallow --arm with_retrieval
+precedent eval ablation   marshmallow
+```
+
+Phases 0–1 need **no credentials at all**. Copy `.env.example` to `.env` for the
+agent phases; every key has a free tier and none requires a credit card.
+
+---
+
+## Running on free tiers
+
+Every limit here was measured, not assumed — and it shaped the design more than
+anything else.
+
+| Provider | Measured free-tier limit | Role |
+|---|---|---|
+| Gemini flash | **20 requests/day per model**, ~106 s/call | single-diff `precedent verify` |
+| Groq | **8,000 tokens/min + ~1,000 req/day per model**, 4 models | batch evaluation |
+
+Four behaviours in the LLM router were each learned from a failure:
+
+1. **Cache per lane, in preference order.** Scanning every lane first let cache
+   residue choose the model — 111 of 115 cases went to one model regardless of
+   routing, silently destroying the paired comparison.
+2. **Cap cooldowns at 120 s.** Providers quote the widest window they hit: a
+   2,169 s hint while the per-minute bucket refilled in seconds; a 7-hour reset
+   while 708 of 1,000 requests remained. Obeying them parked healthy lanes for
+   hours.
+3. **Pace to the arm's real token cost.** Retrieval enlarges the prompt, so it
+   gets a longer interval — rather than a trimmed context, which would
+   understate the very thing being measured.
+4. **Journal every case.** An interrupted run resumes instead of restarting.
+
+---
+
+## What's here
+
+| Path | |
 |---|---|
-| 0 — scaffold, pinned targets, CI | done |
-| 1 — mutation harness + ground truth | done |
-| 2 — Prosecutor + Skeptic, no retrieval (frozen baseline) | running |
-| 3 — RAG layer + ablation delta | retrieval built, measurement pending |
-| 4 — dashboard | pending |
-| 5 — packaging, GitHub Action, cached demos | pending |
+| [`src/precedent/`](src/precedent/) | CLI, mutation harness, agents, retrieval, sandbox, eval |
+| [`architecture/`](architecture/architecture.md) | system-design reference with diagrams |
+| [`Reports/`](Reports/) | phase-by-phase build reports, written for a non-specialist |
+| [`dashboard/`](dashboard/) | static Next.js site over the committed artifacts |
+| [`data/artifacts/`](data/artifacts/) | the evidence: mutation runs, frozen eval arms |
 
-Phase-by-phase build reports live in [`Reports/`](Reports/).
+---
+
+## Honest limitations
+
+- **The local sandbox is isolation, not a security boundary.** It contains
+  accidents, not adversaries. CI gets Docker; the local path does not.
+- **Python only** — the mutation operators and AST chunker are Python-specific.
+- **Call-site resolution is name-based.** Exact resolution is undecidable in a
+  dynamic language; same-named methods on different classes are grouped.
+- **Free-tier throughput bounds the corpus, not the design.** The ablation is
+  reported on 82 paired mutants because that is what the quota allowed, not
+  because the harness cannot do more.
 
 ## License
 
