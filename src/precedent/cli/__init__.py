@@ -45,6 +45,12 @@ def results(
         Path | None,
         typer.Option("--out", help="Write the report to this file instead of stdout."),
     ] = None,
+    into: Annotated[
+        Path | None,
+        typer.Option(
+            "--into", help="Refresh the generated block inside an existing hand-written report."
+        ),
+    ] = None,
     slug: Annotated[
         str, typer.Option("--slug", help="Target the ablation was run on.")
     ] = "marshmallow",
@@ -55,9 +61,13 @@ def results(
     measured prints as "not yet measured". Nothing here is typed by hand, which
     is the only reliable defence against a target quietly becoming a result.
     """
-    from precedent.reporting import build_report
+    from precedent.reporting import build_report, splice_into
 
     document = build_report(slug)
+    if into is not None:
+        splice_into(into, document)
+        out.print(f"Refreshed the generated block in {into}")
+        return
     if out_path is None:
         out.print(document)
         return

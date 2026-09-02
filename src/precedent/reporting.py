@@ -13,6 +13,7 @@ reported as though they had been measured.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 
 from precedent.artifacts import ArtifactError
@@ -294,3 +295,22 @@ def build_report(slug: str = "marshmallow", corpus_slugs: Iterable[str] = ()) ->
             real_diff_section(),
         ]
     )
+
+
+BEGIN = "<!-- results:begin -->"
+END = "<!-- results:end -->"
+
+
+def splice_into(document: Path, generated: str) -> None:
+    """Replace the generated block inside a hand-written report.
+
+    The narrative around it is written by a person; everything between the
+    markers is regenerated from artifacts every time. That split is the point:
+    prose can be argued with, but no number in the file was ever typed.
+    """
+    text = document.read_text(encoding="utf-8")
+    if BEGIN not in text or END not in text:
+        raise ValueError(f"{document} has no {BEGIN} ... {END} block to fill")
+    head, rest = text.split(BEGIN, 1)
+    _, tail = rest.split(END, 1)
+    document.write_text(f"{head}{BEGIN}\n\n{generated.strip()}\n\n{END}{tail}", encoding="utf-8")
