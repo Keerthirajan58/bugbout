@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from precedent.agents.change import CodeChange, FileVersion
 from precedent.agents.context import build_context
 from precedent.agents.prosecutor import Accusation, Prosecutor
 from precedent.agents.skeptic import Skeptic, SkepticVerdict
@@ -57,6 +58,18 @@ def _spec() -> MutantSpec:
     )
 
 
+def _change(source: str = SOURCE, diff: str = "diff") -> CodeChange:
+    """The Prosecutor's view of a change, shaped exactly as the harness builds it."""
+    spec = _spec()
+    return CodeChange(
+        files=(FileVersion(spec.module_path, source, source),),
+        module_path=spec.module_path,
+        function=spec.function,
+        start_line=spec.start_line,
+        diff=diff,
+    )
+
+
 def _router(*responses: str, cache_root: Path) -> LLMRouter:
     return LLMRouter(
         [FakeProvider(responses=list(responses))], cache=ResponseCache(root=cache_root)
@@ -65,30 +78,30 @@ def _router(*responses: str, cache_root: Path) -> LLMRouter:
 
 class TestContext:
     def test_extracts_the_enclosing_function(self) -> None:
-        context = build_context(_spec(), SOURCE, "diff")
+        context = build_context(_change())
         assert "def set_value" in context.enclosing_source
         assert "dct[key] = value" in context.enclosing_source
 
     def test_lists_public_names_for_legitimate_imports(self) -> None:
         """The Prosecutor is told what it may import, so it tests the public API
         instead of reaching into private internals."""
-        assert "set_value" in build_context(_spec(), SOURCE, "diff").public_names
+        assert "set_value" in build_context(_change()).public_names
 
     def test_render_includes_the_diff_and_the_code(self) -> None:
-        rendered = build_context(_spec(), SOURCE, "@@ -1 +1 @@").render()
+        rendered = build_context(_change(diff="@@ -1 +1 @@")).render()
         assert "@@ -1 +1 @@" in rendered
         assert "src/marshmallow/utils.py" in rendered
         assert "set_value" in rendered
 
     def test_unparseable_source_still_yields_context(self) -> None:
         """A syntax error must degrade to a window, not abort the case."""
-        assert build_context(_spec(), "def broken(:\n", "diff").enclosing_source
+        assert build_context(_change("def broken(:\n")).enclosing_source
 
 
 class TestProsecutor:
     def test_parses_a_well_formed_accusation(self, tmp_path: Path) -> None:
         prosecutor = Prosecutor(_router(GOOD_RESPONSE, cache_root=tmp_path))
-        accusation = prosecutor.accuse(build_context(_spec(), SOURCE, "diff"))
+        accusation = prosecutor.accuse(build_context(_change()))
         assert accusation.usable
         assert accusation.test_name == "test_three_segment_key"
         assert "ValueError" in accusation.hypothesis
@@ -97,7 +110,7 @@ class TestProsecutor:
         """One bad response must not abort an evaluation of 454 mutants; it is
         simply a mutant the agent failed to catch."""
         prosecutor = Prosecutor(_router("not json at all", cache_root=tmp_path))
-        accusation = prosecutor.accuse(build_context(_spec(), SOURCE, "diff"))
+        accusation = prosecutor.accuse(build_context(_change()))
         assert not accusation.usable
         assert accusation.error is not None
 
@@ -107,7 +120,7 @@ class TestProsecutor:
             cache=ResponseCache(root=tmp_path),
             max_attempts_per_provider=1,
         )
-        accusation = Prosecutor(router).accuse(build_context(_spec(), SOURCE, "diff"))
+        accusation = Prosecutor(router).accuse(build_context(_change()))
         assert not accusation.usable
         assert accusation.error is not None
 
@@ -125,7 +138,7 @@ class TestProsecutor:
             {"hypothesis": "h", "test_code": "def test_x(): pass", "confident": False}
         )
         accusation = Prosecutor(_router(response, cache_root=tmp_path)).accuse(
-            build_context(_spec(), SOURCE, "diff")
+            build_context(_change())
         )
         assert accusation.usable
         assert not accusation.confident  # recorded, just not disqualifying
@@ -134,7 +147,7 @@ class TestProsecutor:
         """Genuinely declining - producing no test at all - is still honoured."""
         response = json.dumps({"hypothesis": "", "test_code": "", "confident": False})
         accusation = Prosecutor(_router(response, cache_root=tmp_path)).accuse(
-            build_context(_spec(), SOURCE, "diff")
+            build_context(_change())
         )
         assert not accusation.usable
 
@@ -142,21 +155,21 @@ class TestProsecutor:
         """The control arm. Its prompt must contain only what is visible in the
         diff itself, or the ablation compares nothing."""
         prosecutor = Prosecutor(_router(GOOD_RESPONSE, cache_root=tmp_path))
-        request = prosecutor.build_request(build_context(_spec(), SOURCE, "diff"))
+        request = prosecutor.build_request(build_context(_change()))
         assert "RETRIEVED" not in request.user.upper()
 
     def test_retrieval_block_is_appended_when_supplied(self, tmp_path: Path) -> None:
         """Phase 3 differs from phase 2 in exactly this one respect."""
         prosecutor = Prosecutor(_router(GOOD_RESPONSE, cache_root=tmp_path))
         request = prosecutor.build_request(
-            build_context(_spec(), SOURCE, "diff"),
+            build_context(_change()),
             retrieval_block="RETRIEVED CONTEXT: incident #42",
         )
         assert "incident #42" in request.user
 
     def test_the_two_prompts_differ_only_by_the_retrieval_block(self, tmp_path: Path) -> None:
         prosecutor = Prosecutor(_router(GOOD_RESPONSE, cache_root=tmp_path))
-        context = build_context(_spec(), SOURCE, "diff")
+        context = build_context(_change())
         without = prosecutor.build_request(context)
         with_ = prosecutor.build_request(context, retrieval_block="EXTRA")
         assert with_.system == without.system
@@ -280,7 +293,7 @@ class _StubSkeptic:
         self.verdicts = list(verdicts)
         self.calls = 0
 
-    def adjudicate(self, workspace, spec, accusation):  # type: ignore[no-untyped-def]
+    def adjudicate(self, workspace, change, accusation):  # type: ignore[no-untyped-def]
         self.calls += 1
         verdict = self.verdicts[min(self.calls - 1, len(self.verdicts) - 1)]
         return SkepticVerdict(verdict=verdict, reason=verdict)
@@ -390,6 +403,67 @@ class TestRepairLoop:
         assert prosecutor.revise_blocks == ["RETRIEVED CONTEXT: incident:abc"]
 
 
+class TestCodeChange:
+    """The change under review, decoupled from how it was produced.
+
+    Mutants are the evaluation's ground truth, but the Prosecutor and Skeptic
+    only ever need before-and-after source. Keeping that the interface is what
+    lets the identical protocol audit a diff a coding agent wrote - with no
+    branch, so the real-diff study cannot silently take a different path than
+    the measured one.
+    """
+
+    @staticmethod
+    def _versions(original: str, changed: str) -> list[FileVersion]:
+        return [FileVersion("src/pkg/mod.py", original, changed)]
+
+    def test_an_unmodified_file_is_not_a_change(self) -> None:
+        assert CodeChange.from_sources(self._versions(SOURCE, SOURCE)) is None
+
+    def test_the_enclosing_function_is_found_from_the_edited_line(self) -> None:
+        change = CodeChange.from_sources(
+            self._versions(SOURCE, SOURCE.replace("dct[key] = value", "dct[key] = None"))
+        )
+        assert change is not None
+        assert change.function == "set_value"
+
+    def test_the_primary_file_is_the_one_most_changed(self) -> None:
+        """A hypothesis has to point somewhere. With nothing else to go on, the
+        file carrying the most edited lines is the best available guess."""
+        change = CodeChange.from_sources(
+            [
+                FileVersion("src/pkg/small.py", "a = 1\n", "a = 2\n"),
+                FileVersion("src/pkg/big.py", "b = 1\nc = 2\nd = 3\n", "b = 9\nc = 9\nd = 9\n"),
+            ]
+        )
+        assert change is not None
+        assert change.module_path == "src/pkg/big.py"
+
+    def test_the_generated_diff_shows_both_sides(self) -> None:
+        change = CodeChange.from_sources(self._versions("x = 1\n", "x = 2\n"))
+        assert change is not None
+        assert "-x = 1" in change.diff
+        assert "+x = 2" in change.diff
+
+    def test_reverting_restores_every_touched_file(self, tmp_path: Path) -> None:
+        """A leaked edit would corrupt every verdict scored afterwards in the
+        same workspace, and would do it silently."""
+
+        class _Workspace:
+            repo_dir = tmp_path
+
+        for name in ("one.py", "two.py"):
+            (tmp_path / name).write_text("original\n", encoding="utf-8")
+        change = CodeChange.from_sources(
+            [FileVersion(n, "original\n", "changed\n") for n in ("one.py", "two.py")]
+        )
+        assert change is not None
+        change.apply(_Workspace())  # type: ignore[arg-type]
+        assert (tmp_path / "two.py").read_text() == "changed\n"
+        change.revert(_Workspace())  # type: ignore[arg-type]
+        assert [(tmp_path / n).read_text() for n in ("one.py", "two.py")] == ["original\n"] * 2
+
+
 class TestGroundingGate:
     """Counting candidates that were wrong about the library, not the change.
 
@@ -456,7 +530,7 @@ class TestDiffPolarity:
             }
         )
         accusation = Prosecutor(_router(response, cache_root=tmp_path)).accuse(
-            build_context(_spec(), SOURCE, "diff")
+            build_context(_change())
         )
         assert accusation.original_behaviour == "returns 3"
         assert accusation.changed_behaviour == "returns 1"
@@ -465,7 +539,7 @@ class TestDiffPolarity:
         """Free-tier models drop fields. A missing prediction must not discard
         an otherwise usable test - execution, not form, is the arbiter."""
         accusation = Prosecutor(_router(GOOD_RESPONSE, cache_root=tmp_path)).accuse(
-            build_context(_spec(), SOURCE, "diff")
+            build_context(_change())
         )
         assert accusation.usable
         assert accusation.original_behaviour == ""
@@ -474,7 +548,7 @@ class TestDiffPolarity:
         """The instruction is the fix; if it is edited away the inversions
         return, and nothing else in the suite would notice."""
         request = Prosecutor(_router(GOOD_RESPONSE, cache_root=tmp_path)).build_request(
-            build_context(_spec(), SOURCE, "diff")
+            build_context(_change())
         )
         assert "ORIGINAL (`-`)" in request.system
         assert "AS IT IS AFTER THE CHANGE" in request.system

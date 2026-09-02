@@ -17,9 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-import cosmic_ray.plugins as plugins
-from cosmic_ray.mutating import mutate_code
-
+from precedent.agents.change import CodeChange
 from precedent.agents.context import build_context
 from precedent.agents.prosecutor import Accusation, Prosecutor
 from precedent.agents.skeptic import Skeptic, SkepticVerdict
@@ -125,10 +123,8 @@ class EvalHarness:
     def run_one(self, workspace: TargetWorkspace, result: MutantResult) -> CaseOutcome:
         """Evaluate a single surviving mutant."""
         spec = result.spec
-        path = workspace.repo_dir / spec.module_path
-        original = path.read_text(encoding="utf-8")
-        mutated = mutate_code(original, plugins.get_operator(spec.operator)(), spec.occurrence)
-        if mutated is None:
+        change = CodeChange.from_mutant(workspace, spec, result.diff)
+        if change is None:
             return CaseOutcome.build(
                 mutant_id=spec.mutant_id,
                 target_slug=spec.target_slug,
@@ -144,7 +140,7 @@ class EvalHarness:
                 ),
             )
 
-        context = build_context(spec, mutated, result.diff)
+        context = build_context(change)
         retrieval_block: str = ""
         retrieved: list[dict[str, object]] = []
         if self.retrieval is not None:
@@ -155,7 +151,7 @@ class EvalHarness:
         prosecutor, skeptic = self.pool.for_mutant(spec.mutant_id)
 
         accusation = prosecutor.accuse(context, retrieval_block=retrieval_block)
-        verdict = skeptic.adjudicate(workspace, spec, accusation)
+        verdict = skeptic.adjudicate(workspace, change, accusation)
 
         # The grounding gate: a candidate that fails against the unmutated code
         # is wrong about the library, not about the change. Counted per attempt
@@ -178,7 +174,7 @@ class EvalHarness:
             )
             if not revised.usable:
                 break
-            revised_verdict = skeptic.adjudicate(workspace, spec, revised)
+            revised_verdict = skeptic.adjudicate(workspace, change, revised)
             if revised_verdict.verdict == self.GATE_REJECTION:
                 gate_failures += 1
             # Keep the repair only if it actually improved matters; a revision

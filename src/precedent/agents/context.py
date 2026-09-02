@@ -15,8 +15,8 @@ from __future__ import annotations
 import ast
 from dataclasses import dataclass
 
+from precedent.agents.change import CodeChange
 from precedent.logging import get_logger
-from precedent.mutation.mutant import MutantSpec
 
 log = get_logger(__name__)
 
@@ -126,16 +126,19 @@ def _public_names(source: str) -> tuple[str, ...]:
     return tuple(names[:40])
 
 
-def build_context(spec: MutantSpec, mutated_source: str, diff: str) -> DiffContext:
+def build_context(change: CodeChange) -> DiffContext:
     """Build the Prosecutor's view of one change.
 
     The enclosing source shown is the code **after** the change, which is what a
-    reviewer looking at a pull request would actually be reading.
+    reviewer looking at a pull request would actually be reading. The prompt
+    says so explicitly, because a model given only the post-change body under a
+    long prompt will otherwise describe it as the original.
     """
+    changed_source = change.primary.changed
     return DiffContext(
-        module_path=spec.module_path,
-        function=spec.function,
-        diff=diff,
-        enclosing_source=_enclosing_definition(mutated_source, spec.start_line),
-        public_names=_public_names(mutated_source),
+        module_path=change.module_path,
+        function=change.function,
+        diff=change.diff,
+        enclosing_source=_enclosing_definition(changed_source, change.start_line),
+        public_names=_public_names(changed_source),
     )

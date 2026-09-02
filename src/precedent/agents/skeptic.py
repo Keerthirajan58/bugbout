@@ -29,14 +29,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-import cosmic_ray.plugins as plugins
-from cosmic_ray.mutating import mutate_code
-
+from precedent.agents.change import CodeChange
 from precedent.agents.prosecutor import Accusation
 from precedent.llm.base import LLMRequest
 from precedent.llm.router import LLMRouter
 from precedent.logging import get_logger
-from precedent.mutation.mutant import MutantSpec
 from precedent.sandbox.execution import ExecutionResult, SubprocessSandbox
 from precedent.targets.workspace import TargetWorkspace
 
@@ -119,25 +116,20 @@ class Skeptic:
     def adjudicate(
         self,
         workspace: TargetWorkspace,
-        spec: MutantSpec,
+        change: CodeChange,
         accusation: Accusation,
     ) -> SkepticVerdict:
-        """Run the full protocol for one accusation."""
+        """Run the full protocol for one accusation.
+
+        The change is supplied as before/after source rather than as a recipe,
+        so the same protocol adjudicates an injected mutant and a diff a coding
+        agent wrote, with no branch between them.
+        """
         if not accusation.usable:
             return SkepticVerdict(
                 verdict="no_candidate",
                 reason=accusation.error
                 or "the Prosecutor produced no test (it found no behavioural difference)",
-            )
-
-        path = workspace.repo_dir / spec.module_path
-        original_source = path.read_text(encoding="utf-8")
-        mutated_source = mutate_code(
-            original_source, plugins.get_operator(spec.operator)(), spec.occurrence
-        )
-        if mutated_source is None:
-            return SkepticVerdict(
-                verdict="rejected_error", reason="the change could not be reconstructed"
             )
 
         # --- steps 1-3: the test must be valid and stable on the original ----
@@ -172,12 +164,12 @@ class Skeptic:
 
         # --- step 4: does it actually detect the change? --------------------
         try:
-            path.write_text(mutated_source, encoding="utf-8")
+            change.apply(workspace)
             changed = self.sandbox.run(workspace, accusation.test_code)
         finally:
-            # Unconditional: a leaked mutation would corrupt every later verdict
+            # Unconditional: a leaked edit would corrupt every later verdict
             # scored in this workspace.
-            path.write_text(original_source, encoding="utf-8")
+            change.revert(workspace)
 
         if changed.passed:
             return SkepticVerdict(
@@ -194,7 +186,7 @@ class Skeptic:
 
         # --- step 5: adjudication, which may only downgrade -----------------
         if self.review_enabled:
-            accepted, review_reason, provider = self._review(spec, accusation, changed)
+            accepted, review_reason, provider = self._review(change, accusation, changed)
             if not accepted:
                 return SkepticVerdict(
                     verdict="rejected_by_review",
@@ -224,7 +216,7 @@ class Skeptic:
         )
 
     def _review(
-        self, spec: MutantSpec, accusation: Accusation, changed: ExecutionResult
+        self, change: CodeChange, accusation: Accusation, changed: ExecutionResult
     ) -> tuple[bool, str, str]:
         """Ask a model whether an execution-confirmed test is meaningful.
 
@@ -236,8 +228,8 @@ class Skeptic:
             return True, "review not configured", ""
         user = "\n".join(
             [
-                f"LIBRARY MODULE: {spec.module_path}",
-                f"FUNCTION: {spec.function or '(module level)'}",
+                f"LIBRARY MODULE: {change.module_path}",
+                f"FUNCTION: {change.function or '(module level)'}",
                 "",
                 f"STATED HYPOTHESIS: {accusation.hypothesis}",
                 "",
