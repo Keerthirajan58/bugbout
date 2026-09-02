@@ -54,9 +54,18 @@ DEFAULT_COOLDOWN_SECONDS = 30.0
 # a 2169s hint while the per-minute token bucket refilled in seconds, and one
 # model reported a 7-hour reset while still holding 708 of 1000 requests.
 # Honouring those literally parked healthy lanes for hours - the single largest
-# cause of stalled runs in this project. Re-probing after two minutes costs one
-# rejected request and recovers the lane as soon as it is actually usable.
-MAX_COOLDOWN_SECONDS = 120.0
+# cause of stalled runs in this project.
+#
+# The cap is derived rather than guessed. The constraint that actually gates a
+# batch run is the per-minute token bucket, which refills continuously at
+# 8,000/min - about 133 tokens a second. A call books ~3,300, so even from a
+# completely empty bucket the true wait is ~25 seconds. 45s leaves margin for a
+# lane sharing the bucket with another worker.
+#
+# An earlier 120s was measured doing exactly the damage this constant exists to
+# prevent, just less of it: all four lanes sat in two-minute waits while every
+# one of them reported 7,900+ tokens available and a sub-second reset.
+MAX_COOLDOWN_SECONDS = 45.0
 
 
 class AllProvidersFailedError(RuntimeError):
