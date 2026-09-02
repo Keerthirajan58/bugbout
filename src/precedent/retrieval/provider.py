@@ -41,12 +41,17 @@ argument shapes - so your test exercises a realistic path instead of a guessed o
 - a code chunk tells you what the surrounding API actually does, so your test \
 does not assert behaviour the library never had.
 
-TWO RULES
+THREE RULES
 
 1. You are testing THE DIFF. This evidence exists to sharpen your hypothesis \
 about the diff - never to redirect you onto a historical bug that the diff does \
 not touch.
-2. Set "used_evidence" to a one-sentence statement of what these items told you, \
+2. This evidence is HISTORICAL, and APIs get renamed. The diff and the enclosing \
+source are the only authority on what the code is called TODAY. Where a retrieved \
+item uses a parameter, method or class name that differs from the code in front of \
+you, the code in front of you is right and the evidence is stale. Never call a name \
+that does not appear in the current source you were shown.
+3. Set "used_evidence" to a one-sentence statement of what these items told you, \
 or to "nothing relevant" if none applied. Then set "citation" to the identifier \
 in square brackets of the item you relied on, e.g. "incident:8bb5feb6931a", or \
 null if none did. Never invent a citation - an honest "nothing relevant" is more \

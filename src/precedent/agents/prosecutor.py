@@ -32,12 +32,21 @@ You are a meticulous senior engineer reviewing a code change for regressions.
 Your job is to determine whether the change alters observable behaviour in a way \
 the existing test suite would miss, and to prove it with a test.
 
+READING THE DIFF - GET THIS RIGHT BEFORE ANYTHING ELSE
+Lines beginning `-` are the ORIGINAL code. Lines beginning `+` are the CHANGED \
+code. The enclosing source shown to you is the code AS IT IS AFTER THE CHANGE, so \
+do not read it as the original. Your test must assert what the ORIGINAL (`-`) code \
+does. If you assert the CHANGED (`+`) behaviour by mistake, your test fails against \
+the original code, proves nothing about the change, and is discarded.
+
 METHOD
-1. Read the diff and the surrounding code.
-2. Identify ONE specific input for which the original code and the changed code \
-produce different observable results. Be concrete: name the exact value.
-3. Write ONE pytest test that PASSES against the ORIGINAL code and FAILS against \
-the CHANGED code.
+1. Read the diff. Name which side is `-` and which is `+`.
+2. Identify ONE specific input for which the original and the changed code produce \
+different observable results. Be concrete: name the exact value.
+3. Write down separately what the ORIGINAL produces for that input and what the \
+CHANGED code produces. If those two are the same, you have no case - say so.
+4. Write ONE pytest test whose assertions match the ORIGINAL value from step 3. It \
+PASSES against the ORIGINAL code and FAILS against the CHANGED code.
 
 HARD REQUIREMENTS for the test
 - A single self-contained function named `test_...`, plus its imports.
@@ -54,6 +63,8 @@ setting "confident" to false. A wrong accusation is worse than no accusation.
 Respond with JSON only, matching this shape exactly:
 {
   "used_evidence": "what the supplied evidence told you, or 'nothing relevant' (omit if none was supplied)",
+  "original_behaviour": "for your chosen input, what the ORIGINAL (`-`) code returns or raises",
+  "changed_behaviour": "for the same input, what the CHANGED (`+`) code returns or raises",
   "hypothesis": "one sentence: what observably differs, and for which input",
   "reasoning": "two or three sentences explaining why the change causes it",
   "test_name": "test_something_descriptive",
@@ -106,6 +117,19 @@ class Accusation:
     used_evidence: str = ""
     """Phase 3 only: the Prosecutor's own statement of what the evidence told it."""
 
+    original_behaviour: str = ""
+    """What the model predicts the ORIGINAL code does for its chosen input.
+
+    Required before the test is written. Three of the four catches lost to
+    retrieval in the first ablation were direction inversions - the model
+    described the *mutant's* behaviour as the original's, so its assertion could
+    only ever fail on unchanged code. Forcing both sides to be named separately
+    makes the polarity explicit while the model still has room to correct it.
+    """
+
+    changed_behaviour: str = ""
+    """What the model predicts the CHANGED code does for the same input."""
+
     @property
     def usable(self) -> bool:
         """Whether there is a test worth executing.
@@ -152,10 +176,18 @@ REPAIR_PROMPT = """\
 Your previous regression test did not run correctly against the ORIGINAL, \
 UNCHANGED code. It must PASS there before it can be evidence about the change.
 
-Read the failure below and fix the test. Common causes: importing a name that \
-does not exist, calling the API with the wrong signature, or asserting behaviour \
-the library never had. Keep the same hypothesis if it is still sound; abandon it \
-by setting "confident" to false if the failure shows it was wrong.
+Read the failure below and fix the test.
+
+Check the most likely cause FIRST: did you assert the CHANGED (`+`) behaviour \
+instead of the ORIGINAL (`-`) behaviour? If the failure shows the original code \
+producing a value you predicted for the changed code, you read the diff backwards. \
+Flip the assertion to the value the original actually produced - your hypothesis \
+may still be correct, only stated the wrong way round.
+
+Other common causes: importing a name that does not exist, calling the API with the \
+wrong signature, or asserting behaviour the library never had. Keep the same \
+hypothesis if it is still sound; abandon it by setting "confident" to false if the \
+failure shows it was wrong.
 
 Respond with JSON only, in exactly the same shape as before.
 """
@@ -273,4 +305,6 @@ class Prosecutor:
             raw=response.text,
             citation=_extract_citation(payload),
             used_evidence=str(payload.get("used_evidence") or ""),
+            original_behaviour=str(payload.get("original_behaviour") or ""),
+            changed_behaviour=str(payload.get("changed_behaviour") or ""),
         )

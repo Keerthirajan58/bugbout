@@ -8,6 +8,8 @@ they would just be wrong.
 
 from __future__ import annotations
 
+import itertools
+
 import pytest
 
 from precedent.targets import get_target
@@ -242,7 +244,7 @@ class TestSelectionFlagsSurviveAddoptsClearing:
         ws = TargetWorkspace(get_target("click"), root=tmp_path)
         cmd = ws.pytest_command()
         # `python -m pytest` also contains "-m", so match the flag/value pair.
-        pairs = list(zip(cmd, cmd[1:], strict=False))
+        pairs = list(itertools.pairwise(cmd))
         assert ("-m", "not stress") in pairs
 
     def test_addopts_is_still_cleared(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
@@ -253,5 +255,5 @@ class TestSelectionFlagsSurviveAddoptsClearing:
 
     def test_targets_without_selection_flags_are_unchanged(self, tmp_path) -> None:  # type: ignore[no-untyped-def]
         cmd = TargetWorkspace(get_target("marshmallow"), root=tmp_path).pytest_command()
-        pairs = list(zip(cmd, cmd[1:], strict=False))
+        pairs = list(itertools.pairwise(cmd))
         assert not [p for p in pairs if p[0] == "-m" and p[1] != "pytest"]

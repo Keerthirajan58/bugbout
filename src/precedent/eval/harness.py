@@ -95,6 +95,11 @@ class EvalHarness:
     # These say nothing about the diff, so one repair attempt is allowed.
     REPAIRABLE = ("rejected_invalid_on_original", "rejected_error", "rejected_guard")
 
+    # The grounding gate proper: the candidate ran, and failed, against code that
+    # was never changed. Distinct from the other two repairable verdicts, where
+    # the test never executed at all and so says nothing either way.
+    GATE_REJECTION = "rejected_invalid_on_original"
+
     def __init__(
         self,
         prosecutor: Prosecutor,
@@ -152,6 +157,12 @@ class EvalHarness:
         accusation = prosecutor.accuse(context, retrieval_block=retrieval_block)
         verdict = skeptic.adjudicate(workspace, spec, accusation)
 
+        # The grounding gate: a candidate that fails against the unmutated code
+        # is wrong about the library, not about the change. Counted per attempt
+        # rather than only at the end, so a mutant repaired on the second try
+        # still records that its first candidate was a false positive.
+        gate_failures = 1 if verdict.verdict == self.GATE_REJECTION else 0
+
         repairs = 0
         while (
             repairs < self.max_repairs and verdict.verdict in self.REPAIRABLE and accusation.usable
@@ -168,6 +179,8 @@ class EvalHarness:
             if not revised.usable:
                 break
             revised_verdict = skeptic.adjudicate(workspace, spec, revised)
+            if revised_verdict.verdict == self.GATE_REJECTION:
+                gate_failures += 1
             # Keep the repair only if it actually improved matters; a revision
             # that lands in the same bucket should not overwrite the record of
             # the first attempt.
@@ -188,6 +201,7 @@ class EvalHarness:
             verdict=verdict,
             retrieved=retrieved,
             repairs=repairs,
+            gate_failures=gate_failures,
         )
 
     def run(

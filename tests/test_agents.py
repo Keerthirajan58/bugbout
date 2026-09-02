@@ -390,6 +390,96 @@ class TestRepairLoop:
         assert prosecutor.revise_blocks == ["RETRIEVED CONTEXT: incident:abc"]
 
 
+class TestGroundingGate:
+    """Counting candidates that were wrong about the library, not the change.
+
+    A candidate test must pass against the UNMUTATED code before it may be
+    evidence about a diff. That rule already decided verdicts; what was missing
+    was a count. The first ablation could only say "16 cases ended as
+    rejected_invalid_on_original", which conflates a mutant whose first draft
+    was wrong and was then repaired with one that was wrong twice. The
+    false-positive rate is the interesting number, and it needs per-attempt
+    accounting to exist at all.
+    """
+
+    def test_a_clean_first_candidate_records_no_gate_failure(self, survivor) -> None:  # type: ignore[no-untyped-def]
+        harness = EvalHarness(_StubProsecutor(_usable()), _StubSkeptic("confirmed"))  # type: ignore[arg-type]
+        assert harness.run_one(_FakeWorkspace(), survivor).gate_failures == 0
+
+    def test_a_repaired_candidate_still_records_its_first_rejection(self, survivor) -> None:  # type: ignore[no-untyped-def]
+        """The catch counts, and so does the false positive that preceded it."""
+        harness = EvalHarness(  # type: ignore[arg-type]
+            _StubProsecutor(_usable(), _usable("t2")),
+            _StubSkeptic("rejected_invalid_on_original", "confirmed"),
+        )
+        outcome = harness.run_one(_FakeWorkspace(), survivor)
+        assert outcome.verdict == "confirmed"
+        assert outcome.gate_failures == 1
+
+    def test_both_attempts_failing_the_gate_are_counted(self, survivor) -> None:  # type: ignore[no-untyped-def]
+        harness = EvalHarness(  # type: ignore[arg-type]
+            _StubProsecutor(_usable(), _usable("t2")),
+            _StubSkeptic("rejected_invalid_on_original"),
+        )
+        assert harness.run_one(_FakeWorkspace(), survivor).gate_failures == 2
+
+    def test_a_test_that_never_ran_is_not_a_gate_failure(self, survivor) -> None:  # type: ignore[no-untyped-def]
+        """`rejected_error` means the candidate never executed, so it says
+        nothing about whether the model understood the library. Folding it into
+        the gate count would inflate the false-positive rate with provider
+        noise."""
+        harness = EvalHarness(_StubProsecutor(_usable()), _StubSkeptic("rejected_error"))  # type: ignore[arg-type]
+        assert harness.run_one(_FakeWorkspace(), survivor).gate_failures == 0
+
+
+class TestDiffPolarity:
+    """The Prosecutor must name both sides of the change before writing a test.
+
+    Three of the four catches retrieval lost in the first ablation were
+    direction inversions: the model described the *mutant's* behaviour as the
+    original's, so its assertion could only ever fail against unchanged code.
+    Requiring the two predictions as separate fields makes the polarity explicit
+    while the model can still correct it, and records it so the failure mode is
+    countable afterwards rather than only visible by reading test bodies.
+    """
+
+    def test_both_predictions_are_recorded(self, tmp_path: Path) -> None:
+        response = json.dumps(
+            {
+                "original_behaviour": "returns 3",
+                "changed_behaviour": "returns 1",
+                "hypothesis": "h",
+                "reasoning": "r",
+                "test_name": "test_x",
+                "test_code": "def test_x():\n    assert True\n",
+                "confident": True,
+            }
+        )
+        accusation = Prosecutor(_router(response, cache_root=tmp_path)).accuse(
+            build_context(_spec(), SOURCE, "diff")
+        )
+        assert accusation.original_behaviour == "returns 3"
+        assert accusation.changed_behaviour == "returns 1"
+
+    def test_a_response_omitting_them_still_parses(self, tmp_path: Path) -> None:
+        """Free-tier models drop fields. A missing prediction must not discard
+        an otherwise usable test - execution, not form, is the arbiter."""
+        accusation = Prosecutor(_router(GOOD_RESPONSE, cache_root=tmp_path)).accuse(
+            build_context(_spec(), SOURCE, "diff")
+        )
+        assert accusation.usable
+        assert accusation.original_behaviour == ""
+
+    def test_the_prompt_states_which_side_of_the_diff_to_assert(self, tmp_path: Path) -> None:
+        """The instruction is the fix; if it is edited away the inversions
+        return, and nothing else in the suite would notice."""
+        request = Prosecutor(_router(GOOD_RESPONSE, cache_root=tmp_path)).build_request(
+            build_context(_spec(), SOURCE, "diff")
+        )
+        assert "ORIGINAL (`-`)" in request.system
+        assert "AS IT IS AFTER THE CHANGE" in request.system
+
+
 class TestAgentPool:
     """Deterministic model assignment.
 

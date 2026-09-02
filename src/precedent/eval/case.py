@@ -46,6 +46,22 @@ class CaseOutcome:
     repairs: int = 0
     """How many repair attempts were spent before this verdict."""
 
+    gate_failures: int = 0
+    """How many candidate tests failed the grounding gate for this mutant.
+
+    The gate is the Skeptic's first execution: a candidate must pass against the
+    UNMUTATED code before it is allowed to be evidence about the change. Counting
+    the rejections separately from the final verdict is what turns "the agent
+    wrote a wrong test" from an anecdote into a measurable false-positive rate,
+    reportable per arm.
+    """
+
+    original_behaviour: str = ""
+    """The Prosecutor's stated prediction for the ORIGINAL code."""
+
+    changed_behaviour: str = ""
+    """The Prosecutor's stated prediction for the CHANGED code."""
+
     citation: str | None = None
     """Phase 3 only: which retrieved item motivated the hypothesis."""
 
@@ -80,6 +96,7 @@ class CaseOutcome:
         verdict: SkepticVerdict,
         retrieved: list[dict[str, Any]] | None = None,
         repairs: int = 0,
+        gate_failures: int = 0,
     ) -> CaseOutcome:
         return cls(
             mutant_id=mutant_id,
@@ -103,8 +120,11 @@ class CaseOutcome:
             prosecutor_latency=accusation.latency_seconds,
             review_reason=verdict.review_reason,
             repairs=repairs,
+            gate_failures=gate_failures,
             citation=accusation.citation,
             used_evidence=accusation.used_evidence,
+            original_behaviour=accusation.original_behaviour,
+            changed_behaviour=accusation.changed_behaviour,
             retrieved=retrieved or [],
             error=accusation.error,
         )
