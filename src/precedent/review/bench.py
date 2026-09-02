@@ -315,6 +315,9 @@ class TaskBench:
                 "--exclude=__pycache__",
                 "--exclude=*.pyc",
                 "--exclude=.pytest_cache",
+                "--exclude=.hypothesis",
+                "--exclude=.coverage*",
+                "--exclude=*.egg-info",
                 str(self.pristine(task)),
                 str(self.workdir(task)),
             ],
@@ -325,17 +328,60 @@ class TaskBench:
         # verbatim. Decoding leniently stops one non-UTF-8 test asset from
         # discarding an entire agent diff.
         patch = proc.stdout.decode("utf-8", errors="replace")
-        changed = tuple(
-            sorted(
-                {
-                    line.split("\t")[0].split(" ")[-1].replace(f"{self.workdir(task)}/", "")
-                    for line in patch.splitlines()
-                    if line.startswith("+++ ")
-                }
-            )
+        return (
+            patch,
+            self.changed_files(task, patch),
+            any(f.startswith(f"{self.target.test_root}/") for f in self.changed_files(task, patch)),
         )
-        changed = tuple(f for f in changed if f.endswith(".py"))
-        return patch, changed, any(f.startswith(f"{self.target.test_root}/") for f in changed)
+
+    def changed_files(self, task: IssueTask, patch: str) -> tuple[str, ...]:
+        """Relative paths named by a patch's ``+++`` headers.
+
+        The prefix is stripped by exact string match, never by splitting on
+        whitespace: this project's own directory name contains a space, and a
+        whitespace split silently truncates every path at it - which is how an
+        earlier version of this method recorded paths that matched nothing.
+        """
+        prefix = f"{self.workdir(task)}/"
+        names = {
+            line[4:].split("\t")[0].rstrip("\n")[len(prefix) :]
+            for line in patch.splitlines()
+            if line.startswith(f"+++ {prefix}")
+        }
+        return tuple(sorted(n for n in names if n.endswith(".py")))
+
+    def restore(self, task: IssueTask, diff: AgentDiff) -> tuple[bool, str]:
+        """Put a previously-captured agent diff back into a fresh checkout.
+
+        The study has to survive its own checkouts being rebuilt, and `patch`
+        cannot be used here: it splits header paths on whitespace, and this
+        project's own directory contains a space, so every hunk is silently
+        skipped. Applying the hunks directly also lets the result be *verified* -
+        the restored tree is re-diffed against pristine and must reproduce the
+        same set of files.
+        """
+        self.materialise(task, force=True)
+        work, clean = self.workdir(task), self.pristine(task)
+        wanted = set(diff.changed_files)
+        for relative, hunks in _parse_patch(diff.patch, str(clean)).items():
+            # Only the files the record names. A test run leaves artefacts
+            # behind - .hypothesis, coverage data - and those are noise, not
+            # part of what the agent decided to change.
+            if relative not in wanted:
+                continue
+            before = clean / relative
+            source = (
+                before.read_text(encoding="utf-8").splitlines(keepends=True)
+                if before.exists()
+                else []
+            )
+            (work / relative).parent.mkdir(parents=True, exist_ok=True)
+            (work / relative).write_text("".join(_apply_hunks(source, hunks)), encoding="utf-8")
+
+        _, changed, _ = self.diff_of(task)
+        if set(changed) != set(diff.changed_files):
+            return False, f"restored {sorted(changed)}, expected {sorted(diff.changed_files)}"
+        return True, "restored and verified against the recorded file list"
 
     def score(self, task: IssueTask, diff: AgentDiff) -> GroundTruth:
         """Run the oracle and the pre-existing tests against the agent's tree."""
@@ -355,3 +401,63 @@ class TaskBench:
             failing = oracle_detail if oracle != "passed" else reg_detail
             detail = f"{detail} | {failing.splitlines()[-1][:200] if failing else ''}"
         return GroundTruth(task.task_id, oracle, regression, resolved, detail)
+
+
+# --- unified-diff application ------------------------------------------------
+#
+# Written by hand rather than shelled out to `patch` or `git apply`, both of
+# which parse the `---`/`+++` header paths by splitting on whitespace. This
+# project's directory name contains a space, so both silently skip every hunk
+# and report success on an empty result - the worst possible failure for a
+# measurement pipeline. Here the prefix is stripped by exact string match.
+
+Hunk = tuple[int, int, list[str]]
+
+
+def _parse_patch(patch: str, pristine_prefix: str) -> dict[str, list[Hunk]]:
+    """Group a ``diff -ruN`` patch into hunks per file, keyed by relative path."""
+    files: dict[str, list[Hunk]] = {}
+    relative: str | None = None
+    start = length = 0
+    body: list[str] = []
+
+    def flush() -> None:
+        if relative is not None and body:
+            files.setdefault(relative, []).append((start, length, list(body)))
+
+    for line in patch.splitlines(keepends=True):
+        if line.startswith("--- "):
+            flush()
+            body = []
+            path = line[4:].split("\t")[0].rstrip("\n")
+            relative = (
+                path[len(pristine_prefix) :].lstrip("/")
+                if path.startswith(pristine_prefix)
+                else None
+            )
+        elif line.startswith("+++ ") or line.startswith("diff -"):
+            continue
+        elif line.startswith("@@"):
+            flush()
+            body = []
+            span = line.split("@@")[1].strip().split(" ")[0]  # e.g. "-251,18"
+            numbers = span[1:].split(",")
+            start = int(numbers[0])
+            length = int(numbers[1]) if len(numbers) > 1 else 1
+        elif relative is not None and line[:1] in (" ", "+", "-", "\\"):
+            body.append(line)
+    flush()
+    return files
+
+
+def _apply_hunks(source: list[str], hunks: list[Hunk]) -> list[str]:
+    """Rebuild a file from its original lines and the hunks that changed it."""
+    result: list[str] = []
+    cursor = 0  # 0-indexed position in `source`
+    for start, length, body in sorted(hunks):
+        begin = max(start - 1, 0)
+        result.extend(source[cursor:begin])
+        result.extend(line[1:] for line in body if line[:1] in (" ", "+"))
+        cursor = begin + length
+    result.extend(source[cursor:])
+    return result

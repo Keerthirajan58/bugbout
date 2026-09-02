@@ -133,6 +133,20 @@ def review_prepare(
     diff at all, including an empty one.
     """
     tasks = _require_tasks()
+    # Validation rebuilds a checkout from scratch, which destroys whatever an
+    # agent left in it. Learned the hard way: a second `prepare` wiped nineteen
+    # agent diffs. They were recoverable only because the patches were already
+    # recorded, and that is not a guarantee worth relying on twice.
+    try:
+        recorded = {d.task_id for d in load_diffs() if not d.empty}
+    except ArtifactError:
+        recorded = set()
+    if recorded and not force:
+        out.print(
+            f"[yellow]{len(recorded)} task(s) already hold a collected agent diff and are "
+            f"skipped.[/yellow] Pass --force to rebuild them, which discards that work."
+        )
+
     benches: dict[str, TaskBench] = {}
     table = Table(show_header=True)
     for column in ("Task", "Target", "Issue", "Oracle at base", "Workdir"):
@@ -141,6 +155,17 @@ def review_prepare(
     usable = 0
     validated: list[IssueTask] = []
     for task in tasks:
+        if task.task_id in recorded and not force:
+            usable += bool(task.oracle_valid)
+            validated.append(task)
+            table.add_row(
+                task.task_id,
+                task.target_slug,
+                f"#{task.reference}",
+                "[dim]already collected, left untouched[/dim]",
+                "-",
+            )
+            continue
         bench = benches.setdefault(
             task.target_slug,
             TaskBench(get_target(task.target_slug), _clone_for(task.target_slug)),
@@ -179,6 +204,39 @@ def _mining_record() -> dict[str, object]:
         )
     except (ArtifactError, KeyError):
         return {}
+
+
+@review_app.command("restore")
+def review_restore() -> None:
+    """Rebuild each task checkout and reapply the agent diff recorded for it.
+
+    Makes the study reproducible from artifacts: the checkouts can be thrown
+    away and rebuilt exactly. Every restoration is verified by re-diffing the
+    result against pristine and comparing the file list with the record.
+    """
+    tasks = {t.task_id: t for t in _require_tasks()}
+    try:
+        diffs = load_diffs()
+    except ArtifactError as exc:
+        out.print(f"[red]{exc}[/red]  There is nothing recorded to restore.")
+        raise typer.Exit(1) from exc
+
+    benches: dict[str, TaskBench] = {}
+    restored = failed = 0
+    for diff in diffs:
+        if diff.empty:
+            continue
+        task = tasks[diff.task_id]
+        bench = benches.setdefault(
+            task.target_slug,
+            TaskBench(get_target(task.target_slug), _clone_for(task.target_slug)),
+        )
+        ok, note = bench.restore(task, diff)
+        restored += ok
+        failed += not ok
+        if not ok:
+            out.print(f"  [red]{diff.task_id}  {note}[/red]")
+    out.print(f"[bold]{restored}[/bold] diffs restored and verified, {failed} failed")
 
 
 @review_app.command("collect")

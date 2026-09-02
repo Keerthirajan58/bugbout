@@ -22,22 +22,27 @@ GROQ_LANE_MODELS: tuple[str, ...] = (
     "qwen/qwen3.6-27b",
 )
 
-# A Prosecutor call costs roughly 1,400 tokens against an 8,000 tokens/minute
-# budget, so the theoretical ceiling is ~5.7 calls a minute. Pacing at 11s ran
-# at 96% of that ceiling, and any variance - a longer diff, a repair attempt,
-# a retrieval block - pushed it over: the phase 2 run drew retry hints of up to
-# 2169s and lost cases outright. 15s targets ~70% utilisation, which is slower
-# per lane but strictly faster overall than provoking multi-minute cooldowns.
-GROQ_MIN_INTERVAL_SECONDS = 15.0
+# Pacing is set from what Groq actually *debits*, which is not what a call
+# costs. It reserves `max_tokens` against the 8,000 tokens/minute budget at
+# admission and never refunds the difference (measured: an identical 74-token
+# prompt at max_tokens=4096 consumed 126 tokens and removed ~4,170 of headroom).
+#
+# At the 1,536 cap set in `Settings.llm_max_output_tokens`, a Prosecutor call
+# books ~1,200 prompt + 1,536 reserved = ~2,750 tokens, so a lane sustains about
+# 2.9 calls a minute. 21s targets ~98% of that.
+#
+# Slightly under the ceiling on purpose. Pacing at 11s once ran at 96% of the
+# then-ceiling and any variance tipped it over: the phase 2 run drew retry hints
+# of up to 2,169s and lost cases outright. Waiting a little is strictly faster
+# than provoking a multi-minute cooldown.
+GROQ_MIN_INTERVAL_SECONDS = 21.0
 
-# Retrieval still enlarges the prompt, but far less than it did. Eight
-# documents at full length cost ~1,712 extra tokens and held the arm to 2.5
-# calls a minute; the diagnostic showed citation precision is 98% on-target, so
-# the signal lives in the first few results and the rest was paying tokens to
-# distract. Four tightened documents cost ~430 extra tokens, which both restores
-# throughput and removes the drift that was pushing the agent onto historical
-# bugs the diff never touched.
-GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS = 22.0
+# Retrieval adds ~430 prompt tokens for four tightened documents, so a call
+# books ~3,180 and a lane sustains ~2.5 a minute. Eight documents at full length
+# cost ~1,712 extra and held the arm to well under that; the diagnostic showed
+# citation precision is 98% on-target, so the signal lives in the first few
+# results and the rest was paying tokens to distract.
+GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS = 24.0
 
 # Gemini's free tier is 20 requests per day *per model*, which cannot sustain a
 # multi-thousand-call evaluation. It is kept for single-diff use, where quality

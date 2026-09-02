@@ -59,7 +59,22 @@ class Settings(BaseSettings):
     gemini_model: str = "gemini-3.7-flash"
     groq_model: str = "openai/gpt-oss-120b"
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
-    llm_max_output_tokens: int = Field(default=4096, gt=0)
+
+    # 1536, not the conventional 4096, and the difference is worth 2.5x the
+    # throughput of every batch run in this project.
+    #
+    # Groq debits `max_tokens` against the 8,000 tokens/minute budget when the
+    # request is *accepted*, not what the response actually costs. Measured
+    # directly: an identical 74-token prompt left 3,830 tokens of headroom at
+    # max_tokens=4096 and consumed 126 tokens of it. So a 4096 cap books roughly
+    # 5,300 tokens per call and allows about 1.5 calls a minute per model,
+    # whatever the model actually writes.
+    #
+    # Across 83 measured cases the largest complete Prosecutor response parsed
+    # to ~708 tokens and the 90th percentile to ~467. 1536 is over twice the
+    # largest ever produced - nothing has been truncated - and books ~2,700
+    # tokens, roughly tripling the calls available per minute.
+    llm_max_output_tokens: int = Field(default=1536, gt=0)
 
     # A run must be replayable without spending quota, so responses are cached
     # on disk keyed by a hash of the full request.
