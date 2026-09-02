@@ -54,6 +54,14 @@ def _case_payload(case: dict[str, Any], arm: str) -> dict[str, Any]:
         "testCode": _trim(case.get("test_code", ""), MAX_TEST_CHARS),
         "confident": case.get("confident", False),
         "repairs": case.get("repairs", 0),
+        # The grounding gate's own record. `gateFailures` is how many candidate
+        # tests were rejected for failing against unmutated code, and the two
+        # behaviour fields are the Prosecutor's stated prediction for each side
+        # of the diff - which is what makes a direction inversion visible in the
+        # UI rather than something a reader has to infer from a test body.
+        "gateFailures": case.get("gate_failures", 0),
+        "originalBehaviour": case.get("original_behaviour", ""),
+        "changedBehaviour": case.get("changed_behaviour", ""),
         "model": case.get("model", ""),
         "reviewReason": case.get("review_reason"),
         "citation": case.get("citation"),

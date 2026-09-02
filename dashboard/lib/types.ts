@@ -33,6 +33,11 @@ export interface Case {
   testCode: string;
   confident: boolean;
   repairs: number;
+  /** Candidate tests rejected for failing against the unmutated code. */
+  gateFailures?: number;
+  /** The Prosecutor's stated prediction for each side of the diff. */
+  originalBehaviour?: string;
+  changedBehaviour?: string;
   model: string;
   reviewReason: string | null;
   citation: string | null;

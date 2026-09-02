@@ -47,8 +47,8 @@ export function RetrievedCard({
     return (
       <Card title="retrieved context">
         <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
-          None — this is the control arm. The Prosecutor saw only the diff and its
-          surrounding code, which is exactly what the ablation measures.
+          None — this is the control arm. The Prosecutor saw only the diff and
+          its surrounding code, which is exactly what the ablation measures.
         </p>
       </Card>
     );
@@ -64,24 +64,35 @@ export function RetrievedCard({
               className="rounded border p-3"
               style={{
                 borderColor: cited ? "var(--series-with)" : "var(--border)",
-                background: cited ? "color-mix(in srgb, var(--series-with) 7%, transparent)" : undefined,
+                background: cited
+                  ? "color-mix(in srgb, var(--series-with) 7%, transparent)"
+                  : undefined,
               }}
             >
               <div className="flex flex-wrap items-baseline gap-2">
                 <span
                   className="rounded px-1.5 py-0.5 text-xs"
-                  style={{ background: "var(--surface-2)", color: "var(--text-secondary)" }}
+                  style={{
+                    background: "var(--surface-2)",
+                    color: "var(--text-secondary)",
+                  }}
                 >
                   {item.kind}
                 </span>
                 <span className="text-sm font-medium">{item.title}</span>
                 {cited && (
-                  <span className="text-xs font-semibold" style={{ color: "var(--series-with)" }}>
+                  <span
+                    className="text-xs font-semibold"
+                    style={{ color: "var(--series-with)" }}
+                  >
                     cited by the Prosecutor
                   </span>
                 )}
               </div>
-              <div className="mt-1 text-xs" style={{ color: "var(--text-muted)" }}>
+              <div
+                className="mt-1 text-xs"
+                style={{ color: "var(--text-muted)" }}
+              >
                 score {item.score.toFixed(4)} · {item.why}
                 {item.module_path ? ` · ${item.module_path}` : ""}
               </div>
@@ -108,11 +119,42 @@ export function DebateCard({ c }: { c: Case }) {
     <Card title="the debate">
       <div className="space-y-4">
         <Turn who="Prosecutor" color="var(--series-without)">
-          <p className="font-medium">{c.hypothesis || "(no hypothesis produced)"}</p>
+          <p className="font-medium">
+            {c.hypothesis || "(no hypothesis produced)"}
+          </p>
           {c.reasoning && (
-            <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+            <p
+              className="mt-1 text-sm"
+              style={{ color: "var(--text-secondary)" }}
+            >
               {c.reasoning}
             </p>
+          )}
+          {(c.originalBehaviour || c.changedBehaviour) && (
+            <dl className="mt-2 grid gap-1 text-sm sm:grid-cols-2">
+              <div>
+                <dt
+                  className="text-xs uppercase tracking-wide"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  predicted before
+                </dt>
+                <dd style={{ color: "var(--text-secondary)" }}>
+                  {c.originalBehaviour || "—"}
+                </dd>
+              </div>
+              <div>
+                <dt
+                  className="text-xs uppercase tracking-wide"
+                  style={{ color: "var(--text-muted)" }}
+                >
+                  predicted after
+                </dt>
+                <dd style={{ color: "var(--text-secondary)" }}>
+                  {c.changedBehaviour || "—"}
+                </dd>
+              </div>
+            </dl>
           )}
           {c.testCode && (
             <pre
@@ -124,14 +166,24 @@ export function DebateCard({ c }: { c: Case }) {
           )}
           {!c.confident && c.testCode && (
             <p className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
-              The Prosecutor flagged itself unsure. The test was executed anyway —
-              execution arbitrates, not the model&apos;s self-assessment.
+              The Prosecutor flagged itself unsure. The test was executed anyway
+              — execution arbitrates, not the model&apos;s self-assessment.
             </p>
           )}
-          {c.repairs > 0 && (
+          {(c.gateFailures ?? 0) > 0 && (
             <p className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
-              {c.repairs} repair attempt used: the first test did not run correctly
-              against the unchanged code.
+              {c.gateFailures === 1
+                ? "One candidate was rejected at the grounding gate"
+                : `${c.gateFailures} candidates were rejected at the grounding gate`}
+              : the test failed against the unchanged code, so it was wrong
+              about the library rather than about the change.
+              {c.repairs > 0 && " One repair attempt followed."}
+            </p>
+          )}
+          {c.repairs > 0 && (c.gateFailures ?? 0) === 0 && (
+            <p className="mt-2 text-xs" style={{ color: "var(--text-muted)" }}>
+              {c.repairs} repair attempt used: the first test did not run
+              correctly against the unchanged code.
             </p>
           )}
         </Turn>
@@ -139,7 +191,10 @@ export function DebateCard({ c }: { c: Case }) {
         <Turn who="Skeptic" color="var(--series-with)">
           <p className="text-sm">{c.reason}</p>
           {c.reviewReason && (
-            <p className="mt-1 text-sm" style={{ color: "var(--text-secondary)" }}>
+            <p
+              className="mt-1 text-sm"
+              style={{ color: "var(--text-secondary)" }}
+            >
               Review: {c.reviewReason}
             </p>
           )}
@@ -164,7 +219,9 @@ export function VerdictCard({ c }: { c: Case }) {
           className="text-lg font-semibold"
           style={{ color: good ? "var(--good)" : "var(--text-secondary)" }}
         >
-          {good ? "REGRESSION CONFIRMED" : c.verdict.replace(/_/g, " ").toUpperCase()}
+          {good
+            ? "REGRESSION CONFIRMED"
+            : c.verdict.replace(/_/g, " ").toUpperCase()}
         </span>
         <span className="text-sm" style={{ color: "var(--text-muted)" }}>
           verdict established by execution, not argument
@@ -188,7 +245,10 @@ function Turn({
 }) {
   return (
     <div className="border-l-2 pl-4" style={{ borderColor: color }}>
-      <div className="text-xs font-semibold uppercase tracking-wide" style={{ color }}>
+      <div
+        className="text-xs font-semibold uppercase tracking-wide"
+        style={{ color }}
+      >
         {who}
       </div>
       <div className="mt-1">{children}</div>
@@ -196,7 +256,13 @@ function Turn({
   );
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <section
       className="rounded-lg border p-5"
