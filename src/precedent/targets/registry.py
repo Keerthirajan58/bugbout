@@ -38,6 +38,16 @@ class TargetRepo:
     test_dependencies: tuple[str, ...] = field(default_factory=tuple)
     """Packages the suite imports that installing the project alone won't provide."""
 
+    historical_test_dependencies: tuple[str, ...] = field(default_factory=tuple)
+    """Packages older commits' test suites import but the pinned one does not.
+
+    Used only by the real-diff study, which checks out commits from years before
+    the pinned SHA. Kept off `test_dependencies` deliberately: adding a package
+    to the mutation workspace could change how the suite behaves and therefore
+    what the mutation corpus says, and that corpus is the ground truth every
+    other number is scored against.
+    """
+
     extra_pytest_args: tuple[str, ...] = field(default_factory=tuple)
     """Test-selection flags this repo needs, restored after ``addopts`` is cleared.
 
@@ -101,6 +111,8 @@ MARSHMALLOW = TargetRepo(
     test_root="tests",
     test_dependencies=("pytest", "simplejson"),
     historical_source_roots=("marshmallow",),
+    # marshmallow's suite imported pytz until 2022.
+    historical_test_dependencies=("pytz",),
     selection_rationale=(
         "1,819 statements at 98% coverage with a 1.4s suite - the fastest full-suite "
         "re-run of any candidate, which is what makes per-mutant execution affordable. "
@@ -127,6 +139,9 @@ ARROW = TargetRepo(
         "pytz",
         "simplejson",
     ),
+    # arrow's suite used the `chai` mocking library before it moved to
+    # pytest-mock in 2021.
+    historical_test_dependencies=("chai",),
     selection_rationale=(
         "2,315 statements at 99.9% coverage - the highest of any candidate, meaning a "
         "surviving mutant is almost always a real gap in the test suite rather than "

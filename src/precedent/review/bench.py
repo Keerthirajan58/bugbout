@@ -158,10 +158,18 @@ class TaskBench:
         else:
             _run(["python3", "-m", "venv", str(self.venv)], self.root, "venv")
             _run(
-                [str(self.python), "-m", "pip", "install", "-q", *self.target.test_dependencies],
+                [str(self.python), "-m", "pip", "install", "-q", *self._packages()],
                 self.root,
                 "pip install",
             )
+
+    def _packages(self) -> tuple[str, ...]:
+        """What the suite needs across the whole history, not just at the pin.
+
+        Two of the four tasks first rejected for a broken oracle turned out to
+        need only a package the pinned checkout had dropped.
+        """
+        return (*self.target.test_dependencies, *self.target.historical_test_dependencies)
 
     # --- task checkouts ------------------------------------------------------
 
