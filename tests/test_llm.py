@@ -378,12 +378,14 @@ class TestTruncationRetry:
         provider, sent, _ = self._provider(
             monkeypatch, [self._truncated(httpx_module), self._ok(httpx_module)]
         )
-        response = provider.generate(LLMRequest(system="s", user="u", max_output_tokens=1536))
+        response = provider.generate(LLMRequest(system="s", user="u", max_output_tokens=2048))
         assert response.text == '{"ok": true}'
-        assert sent == [1536, 4608]
+        assert sent == [2048, 3072]
 
     def test_the_retry_budget_is_capped(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
-        """A pathological answer must not book an entire minute's allowance."""
+        """A retry that books a whole minute's allowance is rejected itself, and
+        the rejection then parks the lane - which reads as a quota problem
+        rather than as a self-inflicted one. That happened."""
         import httpx as httpx_module
 
         from precedent.llm.providers import MAX_OUTPUT_CEILING
@@ -391,8 +393,8 @@ class TestTruncationRetry:
         provider, sent, _ = self._provider(
             monkeypatch, [self._truncated(httpx_module), self._ok(httpx_module)]
         )
-        provider.generate(LLMRequest(system="s", user="u", max_output_tokens=4000))
-        assert sent == [4000, MAX_OUTPUT_CEILING]
+        provider.generate(LLMRequest(system="s", user="u", max_output_tokens=6000))
+        assert sent == [6000, MAX_OUTPUT_CEILING]
 
     def test_only_one_retry_is_spent(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
         """If it truncates again the error surfaces, rather than looping."""

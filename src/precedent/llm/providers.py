@@ -114,7 +114,7 @@ class GroqProvider:
             # actually binds. Measured on marshmallow: this fires on roughly one
             # call in ten, all of them on reasoning models, whose hidden
             # reasoning tokens count toward the completion budget.
-            budget = min(budget * TRUNCATION_RETRY_FACTOR, MAX_OUTPUT_CEILING)
+            budget = int(min(budget * TRUNCATION_RETRY_FACTOR, MAX_OUTPUT_CEILING))
             log.debug(
                 "groq %s truncated at %d tokens; retrying at %d",
                 self.model,
@@ -170,12 +170,15 @@ class GroqProvider:
             raise ProviderError(f"groq transport error: {exc}") from exc
 
 
-# How much more budget a truncated call is given on its one retry, and the
-# hard ceiling it may not exceed. 3x covers every completion observed across
-# 1,125 cached responses; the ceiling stops a pathological answer from booking
-# an entire minute's token allowance.
-TRUNCATION_RETRY_FACTOR = 3
-MAX_OUTPUT_CEILING = 6000
+# How much more budget a truncated call is given on its one retry, and the hard
+# ceiling it may not exceed.
+#
+# 1.5x, not 3x. At 3x the retry booked ~7,200 tokens of an 8,000/minute lane in
+# a single request, so it was itself rejected - and the rejection parked the
+# lane, which read as a quota problem rather than as a self-inflicted one. The
+# retry has to fit in the same budget as the call it replaces.
+TRUNCATION_RETRY_FACTOR = 1.5
+MAX_OUTPUT_CEILING = 6144
 
 # Groq reports a JSON-mode response that ran out of room as a 400 rather than
 # as a truncated body, so the only way to tell it apart from a genuinely

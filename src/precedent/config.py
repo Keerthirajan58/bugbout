@@ -60,28 +60,26 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-120b"
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
 
-    # 2048, not the conventional 4096, and the difference is worth roughly 2x
-    # the throughput of every batch run in this project.
+    # 4,096, and the number is measured rather than conventional.
     #
-    # Groq debits `max_tokens` against the 8,000 tokens/minute budget when the
-    # request is *accepted*, not what the response actually costs. Measured
-    # directly: an identical 74-token prompt left 3,830 tokens of headroom at
-    # max_tokens=4096 and consumed 126 tokens of it. So a 4096 cap books roughly
-    # 5,300 tokens per call and allows about 1.5 calls a minute per model,
-    # whatever the model actually writes.
+    # Groq debits `max_tokens` against the 8,000 tokens/minute allowance when a
+    # request is *admitted*, and never refunds the remainder - measured
+    # directly: an identical 74-token prompt at max_tokens=4096 consumed 126
+    # tokens and removed ~4,170 of headroom. So the cap is a throughput setting,
+    # not a safety limit, and lowering it is worth real speed.
     #
-    # The cap is therefore set for the common case, not the worst one. Across
-    # 1,125 cached responses the longest parsed to ~2,256 tokens and the great
-    # majority to under 800; reasoning models spend hidden tokens on top, which
-    # also count. A call that does not fit is retried once with three times the
-    # room (see `GroqProvider`), so the rare long answer costs one extra call
-    # instead of every call paying for it.
+    # It cannot go far below 4,096 for this workload, and finding out why cost
+    # two failed attempts. Every Groq model available on the free tier is a
+    # reasoning model, and hidden reasoning tokens count toward the completion
+    # budget. Sampled on eight real Prosecutor prompts: completions of 990 to
+    # 3,292 tokens, of which 652 to 2,864 were reasoning - 60% to 87%. A 1,536
+    # cap truncated cases outright; a 2,048 cap truncated often enough that the
+    # retry below fired constantly, and each retry booked most of a minute's
+    # allowance at once, which is what actually produced the 429s.
     #
-    # An earlier 1,536 was too tight and truncated four cases outright. That
-    # failure is worth naming: Groq reports a truncated JSON response as a 400,
-    # so those cases were recorded as "the Prosecutor produced no test" - which
-    # reads as the agent declining rather than as the harness failing.
-    llm_max_output_tokens: int = Field(default=2048, gt=0)
+    # Prompts measured alongside: 890 to 1,633 tokens. A call therefore books
+    # ~5,250, which is what `GROQ_MIN_INTERVAL_SECONDS` is derived from.
+    llm_max_output_tokens: int = Field(default=4096, gt=0)
 
     # A run must be replayable without spending quota, so responses are cached
     # on disk keyed by a hash of the full request.

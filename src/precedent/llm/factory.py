@@ -27,31 +27,26 @@ GROQ_LANE_MODELS: tuple[str, ...] = (
 # admission and never refunds the difference (measured: an identical 74-token
 # prompt at max_tokens=4096 consumed 126 tokens and removed ~4,170 of headroom).
 #
-# Both intervals are derived from *measured* prompt sizes, not estimated ones.
-# Across 25 marshmallow survivors the Prosecutor prompt runs to 2,072 tokens at
-# the 90th percentile (2,239 at the maximum) - the enclosing function is shown
-# in full, up to 120 lines. With the 2,048 cap from
-# `Settings.llm_max_output_tokens`, a call therefore books ~4,120 tokens, and an
-# 8,000/minute lane sustains 1.94 calls a minute.
+# Both intervals are derived from measured token *bookings*, not from estimates
+# and not from trial and error. Groq reserves prompt + max_tokens on admission,
+# so what a lane can sustain is arithmetic:
 #
-# An earlier 25s was set from a guessed 1,200-token prompt. That asked for 124%
-# of the budget and every lane sat in a permanent 429; the run managed two cases
-# in six minutes. Estimating the prompt is exactly the mistake that made it look
-# like a quota problem.
+#   prompt 890-1,633 (sampled on eight real Prosecutor prompts)
+#   + the 4,096 cap  = ~5,250 booked per call
+#   8,000 / 5,250    = 1.52 calls a minute at 100% of the lane
 #
-# 36s targets ~85%. Deliberately under the ceiling: pacing at 11s once ran at
-# 96% of the then-ceiling and any variance tipped it over, drawing retry hints
-# of up to 2,169s and losing cases outright. Waiting a little is strictly faster
-# than provoking a cooldown.
-GROQ_MIN_INTERVAL_SECONDS = 36.0
+# 44s targets ~90%. Two earlier values were set from guessed prompt sizes and
+# both were wrong in the same direction: 25s asked for 124% of the budget, and
+# every lane sat in a permanent 429 while the API reported 7,900 of 8,000 tokens
+# free. It looked like a quota problem twice, and was arithmetic twice.
+GROQ_MIN_INTERVAL_SECONDS = 44.0
 
-# Measured the same way: four retrieved documents take the p90 prompt to 3,081
-# tokens, so a call books ~5,129 and a lane sustains 1.56 a minute. 45s targets
-# ~85%. Eight documents at full length cost far more and held the arm to well
-# under that; the diagnostic showed citation precision is 98% on-target, so the
-# signal lives in the first few results and the rest was paying tokens to
-# distract.
-GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS = 45.0
+# Measured the same way: four retrieved documents add ~950 tokens, so a call
+# books ~6,200 and a lane sustains 1.29 a minute. 52s targets ~90%. Eight
+# documents at full length cost far more and held the arm well under that; the
+# diagnostic showed citation precision is 98% on-target, so the signal lives in
+# the first few results and the rest was paying tokens to distract.
+GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS = 52.0
 
 # Gemini's free tier is 20 requests per day *per model*, which cannot sustain a
 # multi-thousand-call evaluation. It is kept for single-diff use, where quality
