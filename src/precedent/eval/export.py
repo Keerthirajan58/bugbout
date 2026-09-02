@@ -69,6 +69,68 @@ def _case_payload(case: dict[str, Any], arm: str) -> dict[str, Any]:
     }
 
 
+def _real_diff_payload() -> dict[str, Any] | None:
+    """The real-diff study, if it has been run.
+
+    Returned separately from the mutation cases because it answers a different
+    question about a different kind of change, and merging the two would let a
+    reader average numbers that are not comparable.
+    """
+    from precedent.artifacts import ArtifactError
+    from precedent.review.store import load_audit, load_diffs, load_ground_truth, load_tasks
+
+    try:
+        tasks = {t.task_id: t for t in load_tasks()}
+        diffs = {d.task_id: d for d in load_diffs()}
+        truths = {g.task_id: g for g in load_ground_truth()}
+    except ArtifactError:
+        return None
+
+    audit: dict[str, dict[str, Any]] = {}
+    arm: str | None = None
+    try:
+        recorded = load_audit()
+        audit = {o["task_id"]: o for o in recorded["outcomes"]}
+        arm = recorded.get("arm")
+    except ArtifactError:
+        pass
+
+    rows = []
+    for task_id, task in tasks.items():
+        if not task.oracle_valid:
+            continue
+        truth = truths.get(task_id)
+        diff = diffs.get(task_id)
+        outcome: dict[str, Any] = audit.get(task_id, {})
+        rows.append(
+            {
+                "taskId": task_id,
+                "target": task.target_slug,
+                "reference": task.reference,
+                "referenceKind": task.reference_kind,
+                "title": task.title,
+                "problemStatement": _trim(task.problem_statement, 1200),
+                "baseCommit": task.base_commit[:10],
+                "oracleTests": list(task.oracle_tests),
+                "changedFiles": list(diff.changed_files) if diff else [],
+                "patch": _trim(diff.patch, MAX_DIFF_CHARS) if diff else "",
+                "oracle": truth.oracle if truth else None,
+                "regression": truth.regression if truth else None,
+                "resolved": bool(truth and truth.resolved),
+                "auditVerdict": outcome.get("verdict"),
+                "flagged": bool(outcome.get("flagged")),
+                "hypothesis": outcome.get("hypothesis", ""),
+                "testCode": _trim(outcome.get("test_code", ""), MAX_TEST_CHARS),
+                "originalBehaviour": outcome.get("original_behaviour", ""),
+                "changedBehaviour": outcome.get("changed_behaviour", ""),
+                "citation": outcome.get("citation"),
+                "retrieved": outcome.get("retrieved", []),
+                "auditReason": outcome.get("reason", ""),
+            }
+        )
+    return {"tasks": rows, "arm": arm} if rows else None
+
+
 def build_payload() -> dict[str, Any]:
     """Assemble everything the dashboard needs, across targets and arms."""
     targets: list[dict[str, Any]] = []
@@ -115,7 +177,10 @@ def build_payload() -> dict[str, Any]:
         if entry["arms"] or "mutation" in entry:
             targets.append(entry)
 
-    return {"targets": targets, "cases": cases, "generator": "precedent"}
+    bundle: dict[str, Any] = {"targets": targets, "cases": cases, "generator": "precedent"}
+    if (study := _real_diff_payload()) is not None:
+        bundle["realDiffs"] = study
+    return bundle
 
 
 def export(destination: Path) -> tuple[Path, int]:
