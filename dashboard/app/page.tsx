@@ -1,7 +1,14 @@
 import Link from "next/link";
 import { AblationChart } from "@/components/AblationChart";
+import { RealDiffStudy } from "@/components/RealDiffStudy";
 import { StatTile } from "@/components/StatTile";
-import { caseKey, getAblations, getCases, getTargets } from "@/lib/data";
+import {
+  caseKey,
+  getAblations,
+  getCases,
+  getRealDiffs,
+  getTargets,
+} from "@/lib/data";
 
 const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
@@ -9,6 +16,7 @@ export default function Home() {
   const targets = getTargets();
   const ablations = getAblations();
   const cases = getCases();
+  const realDiffs = getRealDiffs();
 
   const corpus = targets.reduce((n, t) => n + (t.mutation?.survivors ?? 0), 0);
   const mutants = targets.reduce((n, t) => n + (t.mutation?.total ?? 0), 0);
@@ -21,11 +29,11 @@ export default function Home() {
           regressions?
         </h1>
         <p className="max-w-3xl" style={{ color: "var(--text-secondary)" }}>
-          Precedent audits a code change by writing a regression test against it, then
-          proving that test by executing it on both versions of the code. This page
-          reports the measurement that matters: the same agent, the same corpus, the
-          same models — run once with the repository&apos;s own history available and
-          once without.
+          Precedent audits a code change by writing a regression test against
+          it, then proving that test by executing it on both versions of the
+          code. This page reports the measurement that matters: the same agent,
+          the same corpus, the same models — run once with the repository&apos;s
+          own history available and once without.
         </p>
       </section>
 
@@ -40,7 +48,11 @@ export default function Home() {
           value={corpus.toLocaleString()}
           detail="pass the full suite and are still wrong"
         />
-        <StatTile label="repositories" value={String(targets.length)} detail="pinned to commit SHAs" />
+        <StatTile
+          label="repositories"
+          value={String(targets.length)}
+          detail="pinned to commit SHAs"
+        />
         <StatTile
           label="cases recorded"
           value={cases.length.toLocaleString()}
@@ -67,7 +79,11 @@ export default function Home() {
             </thead>
             <tbody>
               {targets.map((t) => (
-                <tr key={t.slug} className="border-t" style={{ borderColor: "var(--border)" }}>
+                <tr
+                  key={t.slug}
+                  className="border-t"
+                  style={{ borderColor: "var(--border)" }}
+                >
                   <td className="py-2">
                     <span className="font-medium">{t.fullName}</span>{" "}
                     <span style={{ color: "var(--text-muted)" }}>
@@ -88,13 +104,25 @@ export default function Home() {
             </tbody>
           </table>
         </div>
-        <p className="max-w-3xl text-sm" style={{ color: "var(--text-secondary)" }}>
-          A mutant is a small, plausible bug injected into the source. One the test
-          suite catches is killed; one that slips through <em>survived</em> — a change
-          that passes every test and is still wrong. Survivors are the corpus the agent
-          is scored on.
+        <p
+          className="max-w-3xl text-sm"
+          style={{ color: "var(--text-secondary)" }}
+        >
+          A mutant is a small, plausible bug injected into the source. One the
+          test suite catches is killed; one that slips through <em>survived</em>{" "}
+          — a change that passes every test and is still wrong. Survivors are
+          the corpus the agent is scored on.
         </p>
       </section>
+
+      {realDiffs && realDiffs.tasks.length > 0 && (
+        <section className="space-y-5">
+          <h2 className="text-xl font-semibold">
+            Diffs an agent actually wrote
+          </h2>
+          <RealDiffStudy tasks={realDiffs.tasks} />
+        </section>
+      )}
 
       {cases.length > 0 && (
         <section className="space-y-4">
@@ -105,19 +133,31 @@ export default function Home() {
                 <Link
                   href={`/case/${caseKey(c)}`}
                   className="flex flex-wrap items-baseline gap-3 rounded border px-3 py-2 text-sm transition-colors hover:brightness-105"
-                  style={{ borderColor: "var(--border)", background: "var(--surface-1)" }}
+                  style={{
+                    borderColor: "var(--border)",
+                    background: "var(--surface-1)",
+                  }}
                 >
                   <span
                     aria-hidden
                     className="inline-block h-2.5 w-2.5 rounded-full"
-                    style={{ background: c.caught ? "var(--good)" : "var(--text-muted)" }}
+                    style={{
+                      background: c.caught
+                        ? "var(--good)"
+                        : "var(--text-muted)",
+                    }}
                   />
                   <code className="text-xs">{c.mutantId}</code>
                   <span className="font-medium">
                     {c.modulePath.split("/").pop()}:{c.function ?? "—"}
                   </span>
-                  <span style={{ color: "var(--text-muted)" }}>{c.operator}</span>
-                  <span className="ml-auto" style={{ color: "var(--text-secondary)" }}>
+                  <span style={{ color: "var(--text-muted)" }}>
+                    {c.operator}
+                  </span>
+                  <span
+                    className="ml-auto"
+                    style={{ color: "var(--text-secondary)" }}
+                  >
                     {c.verdict.replace(/_/g, " ")}
                   </span>
                   <span

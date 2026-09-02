@@ -76,4 +76,39 @@ export interface Target {
 export interface Results {
   targets: Target[];
   cases: Case[];
+  /** Present once the real-diff study has been run. */
+  realDiffs?: RealDiffStudy;
+}
+
+/** One reconstructed historical bug, and what an agent did with it. */
+export interface RealDiffTask {
+  taskId: string;
+  target: string;
+  reference: number;
+  referenceKind: string;
+  title: string;
+  problemStatement: string;
+  baseCommit: string;
+  oracleTests: string[];
+  changedFiles: string[];
+  patch: string;
+  /** Did the maintainer's own test pass against the agent's diff? */
+  oracle: string | null;
+  /** Did the suite as it stood at the base commit still pass? */
+  regression: string | null;
+  resolved: boolean;
+  auditVerdict: string | null;
+  flagged: boolean;
+  hypothesis: string;
+  testCode: string;
+  originalBehaviour: string;
+  changedBehaviour: string;
+  citation: string | null;
+  retrieved: RetrievedItem[];
+  auditReason: string;
+}
+
+export interface RealDiffStudy {
+  tasks: RealDiffTask[];
+  arm: string | null;
 }
