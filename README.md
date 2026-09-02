@@ -154,10 +154,13 @@ whatever it writes. The symptom is a lane in cooldown, indistinguishable from an
 exhausted daily quota — checked mid-run, every model still had 950+ of its 1,000
 daily requests while lanes sat in 120-second waits.
 
-The cap is now set for the common case and a call that does not fit is retried
-once with more room, so the rare long answer costs one extra call instead of
-every call paying for its headroom. On a token-per-minute free tier, `max_tokens`
-is a throughput setting, not a safety limit.
+On a token-per-minute free tier, `max_tokens` is a throughput setting, not a
+safety limit — but it is bounded below by what the model actually emits. Every
+free Groq model is a reasoning model, and sampled on eight real prompts,
+**60–87% of every completion was hidden reasoning** (990–3,292 tokens total).
+Both the cap and the pacing are now arithmetic from those measurements rather
+than tuned by trial; two earlier values, set from estimates, each produced a
+permanent 429 while the API reported the budget almost untouched.
 
 Five behaviours in the LLM router were each learned from a failure:
 
