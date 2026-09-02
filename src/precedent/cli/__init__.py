@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import sys
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -36,6 +37,34 @@ app.add_typer(eval_app)
 app.add_typer(review_app)
 app.add_typer(demo_app)
 app.command()(verify)
+
+
+@app.command("results")
+def results(
+    out_path: Annotated[
+        Path | None,
+        typer.Option("--out", help="Write the report to this file instead of stdout."),
+    ] = None,
+    slug: Annotated[
+        str, typer.Option("--slug", help="Target the ablation was run on.")
+    ] = "marshmallow",
+) -> None:
+    """Assemble the results write-up from artifacts alone.
+
+    Every number it prints was read from a file a run produced; anything not
+    measured prints as "not yet measured". Nothing here is typed by hand, which
+    is the only reliable defence against a target quietly becoming a result.
+    """
+    from precedent.reporting import build_report
+
+    document = build_report(slug)
+    if out_path is None:
+        out.print(document)
+        return
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(document, encoding="utf-8")
+    out.print(f"Wrote {out_path}")
+
 
 out = Console()
 

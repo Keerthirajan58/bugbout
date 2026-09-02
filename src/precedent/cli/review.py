@@ -139,6 +139,7 @@ def review_prepare(
         table.add_column(column)
 
     usable = 0
+    validated: list[IssueTask] = []
     for task in tasks:
         bench = benches.setdefault(
             task.target_slug,
@@ -149,6 +150,9 @@ def review_prepare(
             bench.materialise(task, force=True)
         ok, detail = bench.validate(task)
         usable += ok
+        validated.append(
+            task.with_validation(ok, "oracle fails at base, as required" if ok else detail)
+        )
         table.add_row(
             task.task_id,
             task.target_slug,
@@ -157,7 +161,24 @@ def review_prepare(
             str(bench.workdir(task).relative_to(Path.cwd())) if ok else "-",
         )
     out.print(table)
-    out.print(f"\n[bold]{usable}/{len(tasks)}[/bold] tasks have a valid oracle")
+    path, digest = save_tasks(validated, mining=_mining_record())
+    out.print(
+        f"\n[bold]{usable}/{len(tasks)}[/bold] tasks have a valid oracle\n"
+        f"  saved {path}  sha256 {digest[:16]}..."
+    )
+
+
+def _mining_record() -> dict[str, object]:
+    """Carry the mining counts forward, so re-saving does not lose them."""
+    from precedent.artifacts import payload_of, read_artifact
+    from precedent.review.store import KIND_TASKS, review_dir
+
+    try:
+        return dict(
+            payload_of(read_artifact(review_dir() / "tasks.json", expect_kind=KIND_TASKS))["mining"]
+        )
+    except (ArtifactError, KeyError):
+        return {}
 
 
 @review_app.command("collect")

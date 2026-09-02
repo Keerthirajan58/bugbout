@@ -24,7 +24,7 @@ import re
 import subprocess
 import urllib.error
 import urllib.request
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -92,6 +92,20 @@ class IssueTask:
 
     statement_redacted: bool = False
     """Whether a section describing the author's own fix had to be removed."""
+
+    oracle_valid: bool | None = None
+    """Whether the oracle was confirmed to FAIL at the base commit.
+
+    ``None`` until validation has run. A task whose oracle already passes before
+    the fix exists would be satisfied by any diff, including an empty one, so it
+    cannot be scored - and must be reported as excluded rather than dropped
+    quietly from the denominator.
+    """
+
+    validation_note: str = ""
+
+    def with_validation(self, valid: bool, note: str) -> IssueTask:
+        return replace(self, oracle_valid=valid, validation_note=note)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
