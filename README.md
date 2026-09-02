@@ -53,7 +53,8 @@ and is still wrong.
 |---|---|---|---|---|
 | marshmallow 4.3.1 | 98% | 920 | 87.5% | 115 |
 | arrow 1.4.0 | **99.9%** | 1,690 | 79.9% | 339 |
-| **total** | | **2,610** | | **454** |
+| attrs 26.1.0 | — | 1,130 | 83.4% | 181 |
+| **total** | | **3,740** | | **635** |
 
 Note the second row against the first. **Arrow has higher line coverage and a
 lower kill-rate.** Coverage asks whether a line ran; mutation asks whether
@@ -144,7 +145,21 @@ anything else.
 | Gemini flash | **20 requests/day per model**, ~106 s/call | single-diff `precedent verify` |
 | Groq | **8,000 tokens/min + ~1,000 req/day per model**, 4 models | batch evaluation |
 
-Four behaviours in the LLM router were each learned from a failure:
+**The binding constraint was never the quota.** Groq debits `max_tokens` against
+the tokens-per-minute allowance when a request is *admitted*, and never refunds
+the remainder — measured directly: an identical 74-token prompt at
+`max_tokens=4096` consumed 126 tokens and removed ~4,170 of headroom. At that
+cap one call books ~5,300 tokens and a model sustains **1.5 calls a minute**,
+whatever it writes. The symptom is a lane in cooldown, indistinguishable from an
+exhausted daily quota — checked mid-run, every model still had 950+ of its 1,000
+daily requests while lanes sat in 120-second waits.
+
+The cap is now set for the common case and a call that does not fit is retried
+once with more room, so the rare long answer costs one extra call instead of
+every call paying for its headroom. On a token-per-minute free tier, `max_tokens`
+is a throughput setting, not a safety limit.
+
+Five behaviours in the LLM router were each learned from a failure:
 
 1. **Cache per lane, in preference order.** Scanning every lane first let cache
    residue choose the model — 111 of 115 cases went to one model regardless of
@@ -157,6 +172,10 @@ Four behaviours in the LLM router were each learned from a failure:
    gets a longer interval — rather than a trimmed context, which would
    understate the very thing being measured.
 4. **Journal every case.** An interrupted run resumes instead of restarting.
+5. **Retry a truncated call, once, with more room.** Groq reports a JSON
+   response that ran out of budget as a *400*, so four cases were silently
+   recorded as "the Prosecutor produced no test" — a harness failure wearing an
+   agent's decision as a disguise.
 
 ---
 
@@ -168,7 +187,7 @@ Four behaviours in the LLM router were each learned from a failure:
 | [`architecture/`](architecture/architecture.md) | system-design reference with diagrams |
 | [`Reports/`](Reports/) | phase-by-phase build reports, written for a non-specialist |
 | [`dashboard/`](dashboard/) | static Next.js site over the committed artifacts |
-| [`data/artifacts/`](data/artifacts/) | the evidence: mutation runs, frozen eval arms |
+| [`data/artifacts/`](data/artifacts/) | the evidence: mutation runs, frozen eval arms, the real-diff study |
 
 ---
 
