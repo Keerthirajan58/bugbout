@@ -293,6 +293,24 @@ class TaskBench:
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_text(blob.stdout, encoding="utf-8")
 
+    def restore_tests(self, task: IssueTask, tree: Path) -> None:
+        """Put the test suite back as it stood at the base commit.
+
+        `install_oracle` overwrites test files in place, and without this they
+        stay there: a later `diff_of` reads the maintainer's own tests as though
+        the agent had written them, and a later regression run executes the
+        post-fix suite against the pre-fix code. Both happened.
+        """
+        clean = self.pristine(task)
+        for relative in task.test_files:
+            source = clean / relative
+            destination = tree / relative
+            if source.exists():
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                destination.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+            else:
+                destination.unlink(missing_ok=True)
+
     def oracle_selection(self, task: IssueTask) -> list[str]:
         """Address the added tests by name, so unrelated tests cannot mask them."""
         expression = " or ".join(task.oracle_tests)
@@ -399,9 +417,14 @@ class TaskBench:
 
         # Pre-existing tests first, as the agent left the tree - before the
         # oracle files overwrite them.
+        self.restore_tests(task, tree)
         regression, reg_detail = self.run_tests(tree, list(task.test_files))
         self.install_oracle(task, tree)
-        oracle, oracle_detail = self.run_tests(tree, self.oracle_selection(task))
+        try:
+            oracle, oracle_detail = self.run_tests(tree, self.oracle_selection(task))
+        finally:
+            # Unconditional: scoring must not change the tree it scored.
+            self.restore_tests(task, tree)
 
         resolved = oracle == "passed" and regression == "passed"
         detail = f"oracle={oracle} regression={regression}"

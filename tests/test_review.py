@@ -181,6 +181,56 @@ class TestTaskCheckout:
         assert not touched
 
 
+class TestScoringLeavesNoTrace:
+    """Scoring must not change the tree it scored.
+
+    `install_oracle` overwrites test files in place. Without a restore they stay
+    there, and two things then go wrong silently: a later diff reads the
+    maintainer's own tests as the agent's work, and a later regression run
+    executes the post-fix suite against pre-fix code. Both happened - the second
+    flipped one task's verdict.
+    """
+
+    @staticmethod
+    def _task_and_bench(tmp_path: Path):  # type: ignore[no-untyped-def]
+        repo = TestMiningFilters._repo(tmp_path, "Fix wrong return (#42)", with_test=True)
+        task = mine_tasks(
+            repo,
+            target_slug="marshmallow",
+            full_name="o/r",
+            github=TestMiningFilters._github(tmp_path),
+            since="1990-01-01",
+        )[0][0]
+        bench = TaskBench(get_target("marshmallow"), repo)
+        bench.root = tmp_path / "bench"
+        bench.materialise(task)
+        return task, bench
+
+    def test_installing_the_oracle_then_restoring_returns_the_base_suite(
+        self, tmp_path: Path
+    ) -> None:
+        task, bench = self._task_and_bench(tmp_path)
+        test_file = bench.workdir(task) / task.test_files[0]
+        before = test_file.read_text()
+
+        bench.install_oracle(task, bench.workdir(task))
+        assert test_file.read_text() != before, "the oracle should have replaced the base test"
+
+        bench.restore_tests(task, bench.workdir(task))
+        assert test_file.read_text() == before
+
+    def test_a_restored_tree_reports_no_agent_change(self, tmp_path: Path) -> None:
+        """The check that would have caught the contamination: after scoring,
+        the recorded diff must still be empty for an untouched checkout."""
+        task, bench = self._task_and_bench(tmp_path)
+        bench.install_oracle(task, bench.workdir(task))
+        bench.restore_tests(task, bench.workdir(task))
+        patch, changed, touched = bench.diff_of(task)
+        assert patch.strip() == ""
+        assert changed == ()
+        assert not touched
+
+
 class TestAgentDiffRecord:
     def test_an_empty_patch_is_recognised(self) -> None:
         assert AgentDiff("t", "claude-code", "   \n", (), False).empty
