@@ -81,6 +81,14 @@ ignore = [
 # target registry or from literals, never from user input, and shell=False
 # throughout - so S603's "untrusted input" premise does not apply here.
 "src/precedent/targets/workspace.py" = ["S603"]
+# Task mining reads the local clone through git and fetches issue text over
+# https. Every argv is a literal plus a commit range, and the URL is built from
+# a literal prefix - neither "untrusted input" nor "unexpected scheme" applies.
+"src/precedent/review/tasks.py" = ["S603", "S607", "S310"]
+# The bench runs git, tar and pytest against paths it created itself, with
+# shell=False throughout. The executables are resolved from PATH deliberately:
+# the point is to use the same toolchain the developer has.
+"src/precedent/review/bench.py" = ["S603", "S607"]
 "tests/*" = ["ARG", "S101", "S105", "S106"]  # unused fixtures, bare asserts and fake credentials are the pytest idiom
 
 [tool.mypy]

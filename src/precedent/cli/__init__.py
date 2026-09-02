@@ -15,6 +15,7 @@ from precedent.cli.demo import demo_app
 from precedent.cli.evaluate import eval_app, verify
 from precedent.cli.kb import kb_app
 from precedent.cli.mutants import mutants_app
+from precedent.cli.review import review_app
 from precedent.cli.targets import targets_app
 from precedent.config import load_settings
 from precedent.logging import configure_logging
@@ -32,6 +33,7 @@ app.add_typer(targets_app)
 app.add_typer(mutants_app)
 app.add_typer(kb_app)
 app.add_typer(eval_app)
+app.add_typer(review_app)
 app.add_typer(demo_app)
 app.command()(verify)
 
