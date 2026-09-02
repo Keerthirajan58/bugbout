@@ -42,3 +42,8 @@ dashboard/out/
 
 # --- private planning docs (kept locally, never published) ---
 precedent-build-brief.md
+Precedent_v2_Fix_Plan.md
+
+# Cached GitHub issue text. Reproducible from the API and only an accelerator,
+# so it is not evidence the way a run artifact is.
+data/artifacts/review/github/
