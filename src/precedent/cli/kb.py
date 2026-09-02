@@ -150,8 +150,17 @@ def kb_context(
     if mutant_id not in survivors:
         out.print(f"[red]No surviving mutant {mutant_id!r} for {slug}.[/red]")
         raise typer.Exit(1)
+    from precedent.agents.change import CodeChange
+    from precedent.targets import get_target
+    from precedent.targets.workspace import TargetWorkspace
+
+    result = survivors[mutant_id]
+    change = CodeChange.from_mutant(TargetWorkspace(get_target(slug)), result.spec, result.diff)
+    if change is None:
+        out.print("[red]The change could not be reconstructed from its recipe.[/red]")
+        raise typer.Exit(1)
     retrieval = KnowledgeBaseRetrieval(_load(slug))
-    _, record = retrieval.block_for(survivors[mutant_id])
+    _, record = retrieval.block_for(change)
     if not record:
         out.print("[yellow]Nothing retrieved for this diff.[/yellow]")
         return

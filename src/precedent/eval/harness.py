@@ -33,7 +33,18 @@ log = get_logger(__name__)
 class RetrievalProvider(Protocol):
     """Supplies the Prosecutor's extra context. Absent in phase 2, real in phase 3."""
 
-    def block_for(self, result: MutantResult) -> tuple[str, list[dict[str, object]]]: ...
+    def block_for(self, change: CodeChange) -> tuple[str, list[dict[str, object]]]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class Deliberation:
+    """One full pass of the agent pair over a change, whatever produced it."""
+
+    accusation: Accusation
+    verdict: SkepticVerdict
+    retrieved: list[dict[str, object]]
+    repairs: int
+    gate_failures: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,15 +151,43 @@ class EvalHarness:
                 ),
             )
 
+        # Deterministic in the mutant id, so this mutant draws the same model in
+        # both arms and is compared against itself.
+        prosecutor, skeptic = self.pool.for_mutant(spec.mutant_id)
+        outcome = self.deliberate(workspace, change, prosecutor, skeptic)
+
+        return CaseOutcome.build(
+            mutant_id=spec.mutant_id,
+            target_slug=spec.target_slug,
+            module_path=spec.module_path,
+            function=spec.function,
+            operator=spec.operator,
+            family=spec.family,
+            diff=result.diff,
+            accusation=outcome.accusation,
+            verdict=outcome.verdict,
+            retrieved=outcome.retrieved,
+            repairs=outcome.repairs,
+            gate_failures=outcome.gate_failures,
+        )
+
+    def deliberate(
+        self,
+        workspace: TargetWorkspace,
+        change: CodeChange,
+        prosecutor: Prosecutor,
+        skeptic: Skeptic,
+    ) -> Deliberation:
+        """Prosecute one change, adjudicate it, and repair once if the gate rejects.
+
+        Public and change-shaped so the real-diff study runs the identical
+        procedure. Nothing here knows what produced the change.
+        """
         context = build_context(change)
         retrieval_block: str = ""
         retrieved: list[dict[str, object]] = []
         if self.retrieval is not None:
-            retrieval_block, retrieved = self.retrieval.block_for(result)
-
-        # Deterministic in the mutant id, so this mutant draws the same model in
-        # both arms and is compared against itself.
-        prosecutor, skeptic = self.pool.for_mutant(spec.mutant_id)
+            retrieval_block, retrieved = self.retrieval.block_for(change)
 
         accusation = prosecutor.accuse(context, retrieval_block=retrieval_block)
         verdict = skeptic.adjudicate(workspace, change, accusation)
@@ -185,20 +224,7 @@ class EvalHarness:
                 break
             accusation, verdict = revised, revised_verdict
 
-        return CaseOutcome.build(
-            mutant_id=spec.mutant_id,
-            target_slug=spec.target_slug,
-            module_path=spec.module_path,
-            function=spec.function,
-            operator=spec.operator,
-            family=spec.family,
-            diff=result.diff,
-            accusation=accusation,
-            verdict=verdict,
-            retrieved=retrieved,
-            repairs=repairs,
-            gate_failures=gate_failures,
-        )
+        return Deliberation(accusation, verdict, retrieved, repairs, gate_failures)
 
     def run(
         self,

@@ -19,12 +19,24 @@ from rich.table import Table
 
 from precedent.artifacts import ArtifactError
 from precedent.config import load_settings
+from precedent.eval.harness import EvalHarness
+from precedent.llm.factory import (
+    GROQ_MIN_INTERVAL_SECONDS,
+    GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS,
+    NoProvidersConfiguredError,
+    build_agent_pool,
+)
 from precedent.paths import artifacts_dir, ensure_dirs
+from precedent.retrieval.builder import kb_path
+from precedent.retrieval.index import KnowledgeBase
+from precedent.retrieval.provider import KnowledgeBaseRetrieval
+from precedent.review.audit import AuditOutcome, audit_task
 from precedent.review.bench import AgentDiff, TaskBench
 from precedent.review.store import (
     load_diffs,
     load_ground_truth,
     load_tasks,
+    save_audit,
     save_diffs,
     save_ground_truth,
     save_tasks,
@@ -146,6 +158,138 @@ def review_prepare(
         )
     out.print(table)
     out.print(f"\n[bold]{usable}/{len(tasks)}[/bold] tasks have a valid oracle")
+
+
+@review_app.command("collect")
+def review_collect(
+    agent: Annotated[
+        str, typer.Option("--agent", help="Which coding agent produced these.")
+    ] = "claude-code",
+) -> None:
+    """Capture what each agent left in its task checkout.
+
+    The diff is measured against the pristine archive rather than taken from
+    the agent's own account of what it did, so an edit it did not mention is
+    still audited.
+    """
+    tasks = _require_tasks()
+    benches: dict[str, TaskBench] = {}
+    diffs: list[AgentDiff] = []
+    for task in tasks:
+        bench = benches.setdefault(
+            task.target_slug,
+            TaskBench(get_target(task.target_slug), _clone_for(task.target_slug)),
+        )
+        if not bench.workdir(task).exists():
+            continue
+        patch, changed, touched_tests = bench.diff_of(task)
+        diffs.append(
+            AgentDiff(
+                task_id=task.task_id,
+                agent=agent,
+                patch=patch,
+                changed_files=changed,
+                touched_tests=touched_tests,
+                note="no change produced" if not patch.strip() else "",
+            )
+        )
+
+    path, digest = save_diffs(diffs)
+    empty = sum(1 for d in diffs if d.empty)
+    tests = sum(1 for d in diffs if d.touched_tests)
+    out.print(
+        f"[bold]{len(diffs)}[/bold] diffs collected  ({empty} empty, {tests} touched tests)\n"
+        f"  saved {path}  sha256 {digest[:16]}..."
+    )
+
+
+@review_app.command("audit")
+def review_audit(
+    retrieval: Annotated[
+        bool, typer.Option("--retrieval/--no-retrieval", help="Give the Prosecutor mined history.")
+    ] = True,
+    review: Annotated[
+        bool, typer.Option("--review/--no-review", help="Run the Skeptic's judgement pass.")
+    ] = True,
+) -> None:
+    """Run Precedent's auditor over the agent diffs.
+
+    The same `EvalHarness.deliberate` the mutation ablation calls, so a
+    difference in the result cannot come from a difference in the procedure.
+    """
+    tasks = {t.task_id: t for t in _require_tasks()}
+    try:
+        diffs = load_diffs()
+    except ArtifactError as exc:
+        out.print(f"[red]{exc}[/red]  Run `precedent review collect` first.")
+        raise typer.Exit(1) from exc
+
+    settings = load_settings()
+    try:
+        pool = build_agent_pool(
+            settings,
+            review=review,
+            min_interval=(
+                GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS if retrieval else GROQ_MIN_INTERVAL_SECONDS
+            ),
+            allow_fallback=False,
+        )
+    except NoProvidersConfiguredError as exc:
+        out.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1) from exc
+    out.print(f"Model lanes: {', '.join(pool.models)}")
+
+    benches: dict[str, TaskBench] = {}
+    retrievers: dict[str, KnowledgeBaseRetrieval | None] = {}
+    outcomes: list[AuditOutcome] = []
+
+    for index, diff in enumerate(diffs):
+        task = tasks[diff.task_id]
+        bench = benches.setdefault(
+            task.target_slug,
+            TaskBench(get_target(task.target_slug), _clone_for(task.target_slug)),
+        )
+        if task.target_slug not in retrievers:
+            provider = None
+            if retrieval:
+                directory = kb_path(task.target_slug)
+                if KnowledgeBase.exists(directory):
+                    provider = KnowledgeBaseRetrieval(
+                        KnowledgeBase.load(directory), top_k=settings.retrieval_top_k
+                    )
+                else:
+                    out.print(
+                        f"[yellow]No knowledge base for {task.target_slug}; "
+                        f"its tasks are audited without retrieval.[/yellow]"
+                    )
+            retrievers[task.target_slug] = provider
+
+        prosecutor, skeptic = pool.pairs[index % len(pool.pairs)]
+        harness = EvalHarness(
+            prosecutor, skeptic, retrieval=retrievers[task.target_slug], pool=pool
+        )
+        outcome = audit_task(task, diff, bench, harness, prosecutor, skeptic)
+        outcomes.append(outcome)
+        colour = "red" if outcome.flagged else "dim"
+        out.print(
+            f"  [{colour}]{outcome.task_id}  {task.target_slug:12s} #{task.reference:<6} "
+            f"{outcome.verdict}[/{colour}]"
+        )
+
+    flagged = sum(1 for o in outcomes if o.flagged)
+    path, digest = save_audit(
+        {
+            "arm": "with_retrieval" if retrieval else "no_retrieval",
+            "model": " + ".join(pool.models),
+            "flagged": flagged,
+            "total": len(outcomes),
+            "outcomes": [o.to_dict() for o in outcomes],
+        }
+    )
+    out.print(
+        f"\n[bold]{flagged}/{len(outcomes)}[/bold] diffs flagged as regressions\n"
+        f"  saved {path}  sha256 {digest[:16]}..."
+    )
 
 
 @review_app.command("score")

@@ -314,14 +314,17 @@ class TaskBench:
                 "-ruN",
                 "--exclude=__pycache__",
                 "--exclude=*.pyc",
+                "--exclude=.pytest_cache",
                 str(self.pristine(task)),
                 str(self.workdir(task)),
             ],
             capture_output=True,
-            text=True,
             check=False,
         )
-        patch = proc.stdout
+        # Repositories carry binary fixtures, and diff emits their bytes
+        # verbatim. Decoding leniently stops one non-UTF-8 test asset from
+        # discarding an entire agent diff.
+        patch = proc.stdout.decode("utf-8", errors="replace")
         changed = tuple(
             sorted(
                 {

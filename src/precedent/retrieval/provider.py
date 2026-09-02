@@ -18,8 +18,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from precedent.agents.change import CodeChange
 from precedent.logging import get_logger
-from precedent.mutation.mutant import MutantResult
 from precedent.retrieval.documents import Document
 from precedent.retrieval.embedding import Embedder
 from precedent.retrieval.index import KnowledgeBase, ScoredDocument
@@ -73,41 +73,39 @@ class KnowledgeBaseRetrieval:
         self.embedder = embedder or Embedder()
         self.top_k = top_k
 
-    def query_for(self, result: MutantResult) -> str:
+    def query_for(self, change: CodeChange) -> str:
         """Build the search query from the diff.
 
         The changed lines, the symbol and the file - not the whole function.
         Including the entire enclosing source would swamp the few tokens that
         actually characterise the change.
         """
-        spec = result.spec
         changed = "\n".join(
             line[1:].strip()
-            for line in result.diff.splitlines()
+            for line in change.diff.splitlines()
             if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
         )
-        parts = [spec.function or "", spec.module_path.rsplit("/", 1)[-1], changed]
+        parts = [change.function or "", change.module_path.rsplit("/", 1)[-1], changed]
         return "\n".join(p for p in parts if p)
 
-    def retrieve(self, result: MutantResult) -> list[ScoredDocument]:
-        spec = result.spec
-        query = self.query_for(result)
-        symbols = tuple(s for s in (spec.function,) if s)
+    def retrieve(self, change: CodeChange) -> list[ScoredDocument]:
+        query = self.query_for(change)
+        symbols = tuple(s for s in (change.function,) if s)
         return self.kb.search(
             query,
             self.embedder.embed_one(query),
             top_k=self.top_k,
-            module_path=spec.module_path,
+            module_path=change.module_path,
             symbols=symbols,
         )
 
-    def block_for(self, result: MutantResult) -> tuple[str, list[dict[str, Any]]]:
+    def block_for(self, change: CodeChange) -> tuple[str, list[dict[str, Any]]]:
         """The prompt section, plus a record of what was retrieved.
 
         The record is what the dashboard renders, and what makes a claim about
         grounding checkable after the fact rather than taken on trust.
         """
-        hits = self.retrieve(result)
+        hits = self.retrieve(change)
         if not hits:
             return "", []
         rendered = "\n\n".join(hit.document.render() for hit in hits)

@@ -89,7 +89,7 @@ ignore = [
 # shell=False throughout. The executables are resolved from PATH deliberately:
 # the point is to use the same toolchain the developer has.
 "src/precedent/review/bench.py" = ["S603", "S607"]
-"tests/*" = ["ARG", "S101", "S105", "S106"]  # unused fixtures, bare asserts and fake credentials are the pytest idiom
+"tests/*" = ["ARG", "S101", "S105", "S106", "S603", "S607"]  # unused fixtures, bare asserts, fake credentials and git fixtures are the pytest idiom
 
 [tool.mypy]
 python_version = "3.12"
