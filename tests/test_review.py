@@ -11,6 +11,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from precedent.review.bench import AgentDiff, GroundTruth, TaskBench
 from precedent.review.tasks import GitHubText, IssueTask, mine_tasks, strip_solution
 from precedent.targets import get_target
@@ -193,3 +195,62 @@ class TestAgentDiffRecord:
         anything."""
         assert not GroundTruth("t", "passed", "failed", False).resolved
         assert not GroundTruth("t", "failed", "passed", False).resolved
+
+
+class TestReporting:
+    """The report generator's only job is to never invent a number.
+
+    This project's first version failed in exactly the available way: targets
+    written down before measurement, then reported as though measured. These
+    tests are the mechanical guard against that happening again.
+    """
+
+    @staticmethod
+    def _isolate(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+        monkeypatch.setenv("PRECEDENT_DATA_DIR", str(tmp_path))
+
+    def test_an_unmeasured_section_says_so(self, monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+        """With no artifacts at all, every section must decline to report rather
+        than print zeros - a zero reads as a measurement."""
+        from precedent.reporting import MISSING, build_report
+
+        self._isolate(monkeypatch, tmp_path)
+        document = build_report("marshmallow")
+        assert document.count(MISSING) >= 2
+        assert "0.0%" not in document
+
+    def test_a_run_predating_the_gate_counter_shows_a_dash(self) -> None:
+        """Not 0. A bare zero there would read as "no candidate was ever wrong
+        about the library", which is the opposite of what those runs showed."""
+        from precedent.reporting import _gate_total
+
+        assert _gate_total([{"mutant_id": "a"}, {"mutant_id": "b"}]) == "-"
+
+    def test_a_run_that_counted_the_gate_shows_the_total(self) -> None:
+        from precedent.reporting import _gate_total
+
+        assert _gate_total([{"gate_failures": 2}, {"gate_failures": 0}]) == "2"
+
+    def test_splicing_replaces_only_the_generated_block(self, tmp_path: Path) -> None:
+        from precedent.reporting import splice_into
+
+        document = tmp_path / "report.md"
+        document.write_text(
+            "intro\n\n<!-- results:begin -->\nstale\n<!-- results:end -->\n\noutro\n"
+        )
+        splice_into(document, "| a | b |")
+        text = document.read_text()
+        assert "intro" in text
+        assert "outro" in text
+        assert "stale" not in text
+        assert "| a | b |" in text
+
+    def test_splicing_a_report_with_no_block_is_an_error(self, tmp_path: Path) -> None:
+        """Silently appending would produce a report whose numbers are never
+        refreshed, which is worse than failing."""
+        from precedent.reporting import splice_into
+
+        document = tmp_path / "report.md"
+        document.write_text("no markers here\n")
+        with pytest.raises(ValueError, match="results:begin"):
+            splice_into(document, "| a | b |")
