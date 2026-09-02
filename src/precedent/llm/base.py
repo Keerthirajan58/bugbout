@@ -25,9 +25,14 @@ class RateLimitedError(ProviderError):
     to give up.
     """
 
-    def __init__(self, provider: str, retry_after: float | None = None) -> None:
-        super().__init__(f"{provider} is rate limited")
+    def __init__(self, provider: str, retry_after: float | None = None, detail: str = "") -> None:
+        # The provider's own message is carried through. Without it, "rate
+        # limited" is a symptom with no diagnosis: on this project it meant
+        # tokens-per-minute twice and a self-inflicted oversized request once,
+        # and those need opposite fixes.
+        super().__init__(f"{provider} is rate limited{f': {detail}' if detail else ''}")
         self.provider = provider
+        self.detail = detail
         self.retry_after = retry_after
 
 

@@ -124,7 +124,7 @@ class GroqProvider:
             response = self._post(request, budget)
 
         if response.status_code in _FAILOVER_STATUS:
-            raise RateLimitedError("groq", _retry_after(response))
+            raise RateLimitedError("groq", _retry_after(response), _limit_detail(response))
         if response.status_code >= 400:
             raise ProviderError(f"groq {response.status_code}: {response.text[:300]}")
 
@@ -189,6 +189,26 @@ _TRUNCATION_MARKERS = (
     "max completion tokens reached",
     "json_validate_failed",
 )
+
+
+def _limit_detail(response: httpx.Response) -> str:
+    """The provider's own account of which limit was hit, for the log.
+
+    Groq's 429 body names the window ("tokens per minute", "requests per day"),
+    which is the difference between a run that must slow down and one that must
+    stop for the day. Discarding it turned three different problems into one
+    indistinguishable symptom.
+    """
+    try:
+        message = str(response.json().get("error", {}).get("message", ""))
+    except ValueError:
+        message = response.text[:200]
+    limits = " ".join(
+        f"{k.rsplit('-', 1)[-1]}={v}"
+        for k, v in response.headers.items()
+        if k.startswith("x-ratelimit-remaining")
+    )
+    return f"{message[:220]}{f' [{limits}]' if limits else ''}"
 
 
 def _truncated(response: httpx.Response) -> bool:

@@ -220,6 +220,12 @@ class LLMRouter:
                     # the provider's raw hint made the cap useless - lanes were
                     # parked for 120s but the run still slept for 362s.
                     delay = min(exc.retry_after or DEFAULT_COOLDOWN_SECONDS, MAX_COOLDOWN_SECONDS)
+                    log.info(
+                        "%s rate limited (%.0fs): %s",
+                        lane.name,
+                        delay,
+                        getattr(exc, "detail", "") or "no detail given",
+                    )
                     lane.cool_down(delay)
                     rate_limited[lane.name] = delay
                     failures[lane.name] = f"rate limited, retry in {delay:.0f}s"

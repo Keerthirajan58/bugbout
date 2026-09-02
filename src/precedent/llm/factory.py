@@ -12,9 +12,24 @@ from precedent.llm.providers import GeminiProvider, GroqProvider
 from precedent.llm.router import LLMRouter
 
 # Groq models that answered a realistic ~800-token prompt, each with its own
-# quota: 8,000 tokens/minute and 1,000 requests/day per model. Four independent
-# buckets is what makes the full evaluation finish in about an hour instead of a
-# day and a half.
+# quota. Three limits per model, and the third is the one that actually bounds
+# this project:
+#
+#   8,000 tokens/minute    - advertised in x-ratelimit-limit-tokens
+#   1,000 requests/day     - advertised in x-ratelimit-limit-requests
+#   200,000 tokens/DAY     - advertised NOWHERE
+#
+# The daily token cap appears in no response header. It is visible only in the
+# body of the 429 it eventually produces ("on tokens per day (TPD): Limit
+# 200000, Used 199738, Requested 20072"), which is why the router now logs that
+# body: without it, three different problems - per-minute pacing, an oversized
+# retry, and an exhausted day - all present as the same word, "rate limited".
+#
+# It counts the *booking* (prompt + max_tokens), like the per-minute bucket. So
+# across four models the whole free tier is 800,000 booked tokens a day, and at
+# ~5,250 a call that is about 150 calls - roughly 60 evaluated mutants. A
+# two-arm ablation over 115 survivors costs ~2.1M and has never fitted in one
+# day; v1 accumulated its numbers across several.
 GROQ_LANE_MODELS: tuple[str, ...] = (
     "openai/gpt-oss-120b",
     "openai/gpt-oss-20b",
