@@ -60,8 +60,8 @@ class Settings(BaseSettings):
     groq_model: str = "openai/gpt-oss-120b"
     llm_temperature: float = Field(default=0.2, ge=0.0, le=2.0)
 
-    # 1536, not the conventional 4096, and the difference is worth 2.5x the
-    # throughput of every batch run in this project.
+    # 2048, not the conventional 4096, and the difference is worth roughly 2x
+    # the throughput of every batch run in this project.
     #
     # Groq debits `max_tokens` against the 8,000 tokens/minute budget when the
     # request is *accepted*, not what the response actually costs. Measured
@@ -70,11 +70,18 @@ class Settings(BaseSettings):
     # 5,300 tokens per call and allows about 1.5 calls a minute per model,
     # whatever the model actually writes.
     #
-    # Across 83 measured cases the largest complete Prosecutor response parsed
-    # to ~708 tokens and the 90th percentile to ~467. 1536 is over twice the
-    # largest ever produced - nothing has been truncated - and books ~2,700
-    # tokens, roughly tripling the calls available per minute.
-    llm_max_output_tokens: int = Field(default=1536, gt=0)
+    # The cap is therefore set for the common case, not the worst one. Across
+    # 1,125 cached responses the longest parsed to ~2,256 tokens and the great
+    # majority to under 800; reasoning models spend hidden tokens on top, which
+    # also count. A call that does not fit is retried once with three times the
+    # room (see `GroqProvider`), so the rare long answer costs one extra call
+    # instead of every call paying for it.
+    #
+    # An earlier 1,536 was too tight and truncated four cases outright. That
+    # failure is worth naming: Groq reports a truncated JSON response as a 400,
+    # so those cases were recorded as "the Prosecutor produced no test" - which
+    # reads as the agent declining rather than as the harness failing.
+    llm_max_output_tokens: int = Field(default=2048, gt=0)
 
     # A run must be replayable without spending quota, so responses are cached
     # on disk keyed by a hash of the full request.

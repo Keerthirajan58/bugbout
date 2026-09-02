@@ -27,22 +27,22 @@ GROQ_LANE_MODELS: tuple[str, ...] = (
 # admission and never refunds the difference (measured: an identical 74-token
 # prompt at max_tokens=4096 consumed 126 tokens and removed ~4,170 of headroom).
 #
-# At the 1,536 cap set in `Settings.llm_max_output_tokens`, a Prosecutor call
-# books ~1,200 prompt + 1,536 reserved = ~2,750 tokens, so a lane sustains about
-# 2.9 calls a minute. 21s targets ~98% of that.
+# At the 2,048 cap set in `Settings.llm_max_output_tokens`, a Prosecutor call
+# books ~1,200 prompt + 2,048 reserved = ~3,250 tokens, so a lane sustains about
+# 2.4 calls a minute. 25s targets ~98% of that.
 #
 # Slightly under the ceiling on purpose. Pacing at 11s once ran at 96% of the
 # then-ceiling and any variance tipped it over: the phase 2 run drew retry hints
 # of up to 2,169s and lost cases outright. Waiting a little is strictly faster
 # than provoking a multi-minute cooldown.
-GROQ_MIN_INTERVAL_SECONDS = 21.0
+GROQ_MIN_INTERVAL_SECONDS = 25.0
 
 # Retrieval adds ~430 prompt tokens for four tightened documents, so a call
-# books ~3,180 and a lane sustains ~2.5 a minute. Eight documents at full length
+# books ~3,680 and a lane sustains ~2.2 a minute. Eight documents at full length
 # cost ~1,712 extra and held the arm to well under that; the diagnostic showed
 # citation precision is 98% on-target, so the signal lives in the first few
 # results and the rest was paying tokens to distract.
-GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS = 24.0
+GROQ_RETRIEVAL_MIN_INTERVAL_SECONDS = 28.0
 
 # Gemini's free tier is 20 requests per day *per model*, which cannot sustain a
 # multi-thousand-call evaluation. It is kept for single-diff use, where quality

@@ -320,3 +320,111 @@ class TestCacheDoesNotOverrideModelChoice:
         )
         router = LLMRouter([first, second], cache=cache)
         assert router.generate(request_).model == "second"
+
+
+class TestTruncationRetry:
+    """A budget too small for one answer must not be recorded as a refusal.
+
+    Groq reserves `max_tokens` against the tokens-per-minute allowance whether
+    or not it is used, so the cap is set for the common case. When it binds,
+    the call is retried once with more room. Getting this wrong is expensive in
+    a specific way: Groq reports a truncated JSON response as a 400, so the
+    case lands as "the Prosecutor produced no test" - which reads as the agent
+    declining rather than as the harness failing. Four cases were lost that way
+    before this existed.
+    """
+
+    @staticmethod
+    def _provider(monkeypatch, responses):  # type: ignore[no-untyped-def]
+        import httpx
+
+        from precedent.llm import providers
+
+        sent: list[int] = []
+
+        def fake_post(url, **kwargs):  # type: ignore[no-untyped-def]
+            sent.append(kwargs["json"]["max_tokens"])
+            return responses.pop(0)
+
+        monkeypatch.setattr(providers.httpx, "post", fake_post)
+        return providers.GroqProvider("key", model="openai/gpt-oss-120b"), sent, httpx
+
+    @staticmethod
+    def _ok(httpx_module):  # type: ignore[no-untyped-def]
+        return httpx_module.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": '{"ok": true}'}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 20},
+            },
+        )
+
+    @staticmethod
+    def _truncated(httpx_module):  # type: ignore[no-untyped-def]
+        return httpx_module.Response(
+            400,
+            json={
+                "error": {
+                    "code": "json_validate_failed",
+                    "message": "Failed to generate JSON. max completion tokens reached before "
+                    "generating a valid document",
+                }
+            },
+        )
+
+    def test_a_truncated_call_is_retried_with_more_room(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        import httpx as httpx_module
+
+        provider, sent, _ = self._provider(
+            monkeypatch, [self._truncated(httpx_module), self._ok(httpx_module)]
+        )
+        response = provider.generate(LLMRequest(system="s", user="u", max_output_tokens=1536))
+        assert response.text == '{"ok": true}'
+        assert sent == [1536, 4608]
+
+    def test_the_retry_budget_is_capped(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """A pathological answer must not book an entire minute's allowance."""
+        import httpx as httpx_module
+
+        from precedent.llm.providers import MAX_OUTPUT_CEILING
+
+        provider, sent, _ = self._provider(
+            monkeypatch, [self._truncated(httpx_module), self._ok(httpx_module)]
+        )
+        provider.generate(LLMRequest(system="s", user="u", max_output_tokens=4000))
+        assert sent == [4000, MAX_OUTPUT_CEILING]
+
+    def test_only_one_retry_is_spent(self, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+        """If it truncates again the error surfaces, rather than looping."""
+        import httpx as httpx_module
+
+        provider, sent, _ = self._provider(
+            monkeypatch, [self._truncated(httpx_module), self._truncated(httpx_module)]
+        )
+        with pytest.raises(ProviderError, match="400"):
+            provider.generate(LLMRequest(system="s", user="u", max_output_tokens=1536))
+        assert len(sent) == 2
+
+    def test_a_genuinely_bad_request_is_not_retried(self, monkeypatch) -> None:
+        """Only the truncation signature triggers a retry. Spending a second
+        call on a malformed prompt would waste the quota this exists to save."""
+        import httpx as httpx_module
+
+        bad = httpx_module.Response(
+            400, json={"error": {"code": "invalid_request_error", "message": "bad model"}}
+        )
+        provider, sent, _ = self._provider(monkeypatch, [bad])
+        with pytest.raises(ProviderError, match="400"):
+            provider.generate(LLMRequest(system="s", user="u", max_output_tokens=1536))
+        assert len(sent) == 1
+
+    def test_a_rate_limit_is_still_a_rate_limit(self, monkeypatch) -> None:
+        """429 must keep failing over rather than being mistaken for truncation."""
+        import httpx as httpx_module
+
+        provider, sent, _ = self._provider(
+            monkeypatch, [httpx_module.Response(429, json={"error": {"message": "slow down"}})]
+        )
+        with pytest.raises(RateLimitedError):
+            provider.generate(LLMRequest(system="s", user="u", max_output_tokens=1536))
+        assert len(sent) == 1
