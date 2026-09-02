@@ -63,11 +63,11 @@ def results(
     """
     from precedent.reporting import build_report, splice_into
 
-    document = build_report(slug)
     if into is not None:
-        splice_into(into, document)
+        splice_into(into, build_report(slug, standalone=False))
         out.print(f"Refreshed the generated block in {into}")
         return
+    document = build_report(slug)
     if out_path is None:
         out.print(document)
         return

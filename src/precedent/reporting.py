@@ -281,15 +281,31 @@ def real_diff_section() -> str:
     return "\n".join(parts)
 
 
-def build_report(slug: str = "marshmallow", corpus_slugs: Iterable[str] = ()) -> str:
-    """The whole results document, assembled from artifacts alone."""
-    return "\n".join(
+def build_report(
+    slug: str = "marshmallow",
+    corpus_slugs: Iterable[str] = (),
+    *,
+    standalone: bool = True,
+) -> str:
+    """The whole results document, assembled from artifacts alone.
+
+    ``standalone`` adds the title and preamble. It is off when the block is
+    spliced into a report that already has both.
+    """
+    preamble = (
         [
             "# Precedent - measured results",
             "",
             "Every number below was read from an artifact a run produced. Anything not "
             "yet measured says so.",
             "",
+        ]
+        if standalone
+        else []
+    )
+    return "\n".join(
+        [
+            *preamble,
             corpus_section(corpus_slugs or ("marshmallow", "arrow", "attrs")),
             ablation_section(slug),
             real_diff_section(),
