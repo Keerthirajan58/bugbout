@@ -120,10 +120,10 @@ class TaskBench:
     reinstalling anything.
     """
 
-    def __init__(self, target: TargetRepo, source_clone: Path) -> None:
+    def __init__(self, target: TargetRepo, source_clone: Path, root: Path | None = None) -> None:
         self.target = target
         self.source_clone = source_clone
-        self.root = review_root() / target.slug
+        self.root = root or review_root() / target.slug
 
     # --- environment ---------------------------------------------------------
 
@@ -150,7 +150,7 @@ class TaskBench:
                     "install",
                     "--python",
                     str(self.python),
-                    *self.target.test_dependencies,
+                    *self._packages(),
                 ],
                 self.root,
                 "uv pip install",
@@ -196,6 +196,11 @@ class TaskBench:
             self._archive(task.base_commit, path)
         return work
 
+    def archive(self, commit: str, destination: Path) -> None:
+        """Lay down the tree at ``commit`` with no history attached."""
+        destination.mkdir(parents=True, exist_ok=True)
+        self._archive(commit, destination)
+
     def _archive(self, commit: str, destination: Path) -> None:
         archive = subprocess.run(
             ["git", "archive", "--format=tar", commit],
@@ -233,9 +238,18 @@ class TaskBench:
         return env
 
     def run_tests(
-        self, tree: Path, selection: list[str], *, timeout: int = TEST_TIMEOUT
+        self,
+        tree: Path,
+        selection: list[str],
+        *,
+        timeout: int = TEST_TIMEOUT,
+        junit: Path | None = None,
     ) -> tuple[Outcome, str]:
-        """Run a specific selection of tests inside a task checkout."""
+        """Run a specific selection of tests inside a task checkout.
+
+        ``junit`` additionally records every test's individual outcome, which is
+        what the arena's FAIL_TO_PASS / PASS_TO_PASS bookkeeping is built on.
+        """
         cmd = [
             str(self.python),
             "-m",
@@ -249,6 +263,7 @@ class TaskBench:
             "-p",
             "no:randomly",
             "--tb=short",
+            *([f"--junitxml={junit}", "-o", "junit_family=xunit1"] if junit else []),
             *selection,
         ]
         try:

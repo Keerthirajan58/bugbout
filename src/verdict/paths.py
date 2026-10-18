@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 
 _ENV_DATA_DIR = "VERDICT_DATA_DIR"
+_ENV_HOME = "VERDICT_HOME"
 
 
 def project_root() -> Path:
@@ -39,6 +40,18 @@ def artifacts_dir() -> Path:
 def cache_dir() -> Path:
     """Disposable caches (LLM responses, embeddings). Safe to delete."""
     return data_dir() / "cache"
+
+
+def verdict_home() -> Path:
+    """Where the arena runs coding agents: environments, checkouts, transcripts.
+
+    Deliberately outside the repository. This project's directory name contains
+    spaces, and a coding agent runs shell commands a model wrote - where an
+    unquoted path does not fail loudly, it just quietly means something else.
+    Override with ``VERDICT_HOME``.
+    """
+    override = os.environ.get(_ENV_HOME)
+    return Path(override).expanduser().resolve() if override else Path.home() / ".verdict"
 
 
 def ensure_dirs() -> None:
