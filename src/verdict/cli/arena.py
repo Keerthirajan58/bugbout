@@ -10,13 +10,16 @@ Run in order; each command writes an artifact the next one reads:
 ``cross``            run every exhibit against every fix and the untouched base
 ``judge``            pick a patch per task from its matrix, or abstain
 ``report``           score the judge's picks beside every baseline
+``export``           bundle everything the dashboard shows into one JSON file
 """
 
 from __future__ import annotations
 
+import json
 import logging
 from collections import defaultdict
 from contextlib import nullcontext
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -32,11 +35,13 @@ from verdict.arena.contestants import (
     OllamaServer,
 )
 from verdict.arena.examiners import Examiner, Exhibit, source_context
+from verdict.arena.export import build_bundle
 from verdict.arena.judge import judge
 from verdict.arena.matrix import CrossExaminer, Matrix, fixes_only, self_exhibits
 from verdict.arena.patch import Patch
 from verdict.arena.race import Race
 from verdict.arena.store import (
+    arena_dir,
     list_entrants,
     load_entries,
     load_exhibits,
@@ -52,7 +57,7 @@ from verdict.arena.store import (
     save_verdicts,
 )
 from verdict.arena.truth import Referee, Resolution
-from verdict.artifacts import ArtifactError
+from verdict.artifacts import ArtifactError, payload_of, read_artifact
 from verdict.config import load_settings
 from verdict.llm.providers import GeminiProvider, GroqProvider, OllamaProvider
 from verdict.paths import verdict_home
@@ -290,10 +295,11 @@ def _examiners(local: bool) -> list[Examiner]:
             "examiner/gemini-flash",
             "google",
             [
-                GeminiProvider(settings.require("gemini_api_key"), model=m)
+                GeminiProvider(settings.require("gemini_api_key"), model=m, thinking="low")
                 for m in ("gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash")
             ],
             context_budget=40_000,
+            max_output_tokens=16_384,
         ),
         # Groq books prompt + max_tokens against 8,000 tokens a minute, so the
         # context is held to what fits beside a 4,096-token answer.
@@ -322,13 +328,16 @@ def _examiners(local: bool) -> list[Examiner]:
 @arena_app.command("examine")
 def arena_examine(
     local: Annotated[bool, typer.Option(help="Add the local gpt-oss examiner.")] = False,
+    only: Annotated[
+        list[str] | None, typer.Option("--task", "-t", help="Task id or issue number.")
+    ] = None,
 ) -> None:
     """Blind examiners write regression tests from each issue alone.
 
     They see the issue and the base version of the files the contestants
     changed - never a patch. One call per examiner per task.
     """
-    tasks = _tasks()
+    tasks = _tasks(only)
     patches = _entry_patches({t.task_id for t in tasks})
     examiners = _examiners(local)
     exhibits: list[dict[str, object]] = []
@@ -366,9 +375,14 @@ def arena_examine(
 
 
 @arena_app.command("cross")
-def arena_cross() -> None:
+def arena_cross(
+    only: Annotated[
+        list[str] | None, typer.Option("--task", "-t", help="Task id or issue number.")
+    ] = None,
+    dry_run: Annotated[bool, typer.Option(help="Print the matrix sizes; save nothing.")] = False,
+) -> None:
     """Run every exhibit against every fix and the untouched base."""
-    tasks = _tasks()
+    tasks = _tasks(only)
     patches = _entry_patches({t.task_id for t in tasks})
     try:
         blind = [Exhibit.from_dict(e) for e in load_exhibits()]
@@ -393,6 +407,11 @@ def arena_cross() -> None:
         out.print(
             f"  {task.target_slug:12s} #{task.reference:<6} {len(exhibits)} exhibits  {sizes}"
         )
+    if dry_run:
+        for m in matrices:
+            verdict = judge(Matrix.from_dict(m))
+            out.print(f"  dry run: {verdict.chosen or 'abstain'} - {verdict.reason}")
+        return
     path = save_matrices(matrices)
     out.print(f"\n[bold]{len(matrices)}[/bold] matrices  ->  {path}")
 
@@ -435,3 +454,43 @@ def arena_report() -> None:
     )
     table.add_row("best possible (any agent)", f"{board.best_possible}/{board.tasks}", "ceiling")
     out.print(table)
+
+
+@arena_app.command("export")
+def arena_export(
+    out_path: Annotated[
+        Path, typer.Option("--out", help="Where the dashboard reads its data.")
+    ] = Path("dashboard/data/arena.json"),
+) -> None:
+    """Bundle every artifact the dashboard shows into one JSON file."""
+    tasks = _tasks()
+    ids = [t.task_id for t in tasks]
+    matrices = {m["task_id"]: Matrix.from_dict(m) for m in load_matrices()}
+    candidates = {tid: [t for t in m.trees if t != "base"] for tid, m in matrices.items()}
+    board = scoreboard.build(ids, load_resolutions(), load_verdicts(), candidates)
+    entries: dict[str, dict[str, dict[str, object]]] = defaultdict(dict)
+    meta: dict[str, dict[str, object]] = {}
+    for entrant in list_entrants():
+        payload = load_entries(entrant)
+        meta[entrant] = payload.get("meta", {})
+        for entry in payload["entries"]:
+            entries[entry["task_id"]][entrant] = entry
+    exhibits_doc = payload_of(read_artifact(arena_dir() / "exhibits.json"))
+    bundle = build_bundle(
+        tasks,
+        {t.target_slug: get_target(t.target_slug).full_name for t in tasks},
+        load_oracles(),
+        entries,
+        meta,
+        exhibits_doc["exhibits"],
+        exhibits_doc.get("examiners", {}),
+        matrices,
+        load_resolutions(),
+        board,
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    out_path.write_text(json.dumps(bundle, indent=1, default=str), encoding="utf-8")
+    size = out_path.stat().st_size / 1024
+    out.print(
+        f"[bold]{len(bundle['tasks'])}[/bold] tasks exported  ->  {out_path}  ({size:.0f} KB)"
+    )

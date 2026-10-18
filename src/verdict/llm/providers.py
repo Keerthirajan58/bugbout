@@ -36,9 +36,15 @@ class GeminiProvider:
     name = "gemini"
     _BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash") -> None:
+    def __init__(
+        self, api_key: str, model: str = "gemini-2.5-flash", thinking: str | None = None
+    ) -> None:
         self._api_key = api_key
         self.model = model
+        # Gemini 3 models think before answering, and the thinking is billed
+        # against maxOutputTokens: at 4,096 an examiner's whole budget went to
+        # reasoning and the visible answer was cut off mid-thought.
+        self.thinking = thinking
 
     def generate(self, request: LLMRequest) -> LLMResponse:
         body: dict[str, Any] = {
@@ -51,6 +57,8 @@ class GeminiProvider:
         }
         if request.json_output:
             body["generationConfig"]["responseMimeType"] = "application/json"
+        if self.thinking:
+            body["generationConfig"]["thinkingConfig"] = {"thinkingLevel": self.thinking}
 
         started = time.perf_counter()
         try:
@@ -64,7 +72,7 @@ class GeminiProvider:
             raise ProviderError(f"gemini transport error: {exc}") from exc
 
         if response.status_code in _FAILOVER_STATUS:
-            raise RateLimitedError("gemini", _retry_after(response))
+            raise RateLimitedError("gemini", _retry_after(response), _gemini_quota(response))
         if response.status_code >= 400:
             raise ProviderError(f"gemini {response.status_code}: {response.text[:300]}")
 
@@ -76,7 +84,8 @@ class GeminiProvider:
             raise ProviderError(f"gemini returned no candidates: {str(payload)[:300]}")
 
         parts = candidates[0].get("content", {}).get("parts") or []
-        text = "".join(part.get("text", "") for part in parts)
+        # Thought summaries arrive as parts flagged `thought`; they are not the answer.
+        text = "".join(part.get("text", "") for part in parts if not part.get("thought"))
         usage = payload.get("usageMetadata", {})
         return LLMResponse(
             text=text,
@@ -204,6 +213,27 @@ _TRUNCATION_MARKERS = (
     "max completion tokens reached",
     "json_validate_failed",
 )
+
+
+def _gemini_quota(response: httpx.Response) -> str:
+    """Which Gemini quota refused the call, e.g. ``...PerDayPerProjectPerModel-FreeTier``.
+
+    The body names it; the status code alone does not. A per-minute refusal is
+    worth waiting out and a per-day one is not, and on the free tier the daily
+    quota for a model is about twenty requests - easy to exhaust in one task.
+    """
+    try:
+        details = response.json().get("error", {}).get("details", [])
+    except ValueError:
+        return response.text[:200]
+    quota_ids = [
+        str(v.get("quotaId", ""))
+        for d in details
+        if isinstance(d, dict)
+        for v in d.get("violations", [])
+        if isinstance(v, dict)
+    ]
+    return ", ".join(q for q in quota_ids if q) or response.text[:200]
 
 
 def _limit_detail(response: httpx.Response) -> str:

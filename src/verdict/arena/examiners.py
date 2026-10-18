@@ -144,6 +144,7 @@ class Examiner:
         context_budget: int,
         cache: ResponseCache | None = None,
         max_wait: float = 180.0,
+        max_output_tokens: int = 4096,
     ) -> None:
         self.author = author
         self.family = family
@@ -151,6 +152,9 @@ class Examiner:
         self.context_budget = context_budget
         self.cache = cache or ResponseCache()
         self.max_wait = max_wait
+        self.max_output_tokens = max_output_tokens
+        self._spent: set[str] = set()
+        """Models whose daily quota ran out this run; not retried on later tasks."""
 
     def examine(self, task: IssueTask, repo: str, context: str) -> Exhibit:
         request = LLMRequest(
@@ -162,22 +166,29 @@ class Examiner:
                 context=context,
             ),
             temperature=0.2,
-            max_output_tokens=4096,
+            max_output_tokens=self.max_output_tokens,
         )
         errors: list[str] = []
         for provider in self.providers:
             key = request.cache_key(provider.model)
             response = self.cache.get(key)
+            if response is None and provider.model in self._spent:
+                continue
             waited = 0.0
             while response is None:
                 try:
                     response = provider.generate(request)
-                    self.cache.put(key, response)
+                    if response.metadata.get("finish_reason") not in ("MAX_TOKENS", "length"):
+                        self.cache.put(key, response)  # never cache a truncated answer
                 except RateLimitedError as exc:
                     # A per-minute limit is worth waiting out; a daily one is
                     # not, and the next model in the family has its own quota.
                     pause = exc.retry_after or 30.0
-                    if "day" in exc.detail.lower() or waited + pause > self.max_wait:
+                    if "day" in exc.detail.lower():
+                        self._spent.add(provider.model)
+                        errors.append(f"{provider.model}: daily quota exhausted")
+                        break
+                    if waited + pause > self.max_wait:
                         errors.append(f"{provider.model}: {exc}")
                         break
                     time.sleep(pause)
