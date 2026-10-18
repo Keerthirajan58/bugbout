@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from precedent.sandbox.guards import inspect_test_code
+from verdict.sandbox.guards import inspect_test_code
 
 LEGITIMATE = """
 def test_set_value_nested():

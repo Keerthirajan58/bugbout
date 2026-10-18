@@ -18,12 +18,12 @@ import time
 import numpy as np
 import pytest
 
-from precedent.retrieval.chunking import chunk_module
-from precedent.retrieval.documents import Document
-from precedent.retrieval.index import KnowledgeBase, tokenize
-from precedent.retrieval.mining.git_history import Commit
-from precedent.retrieval.risk import rank, score_symbols
-from precedent.targets import get_target
+from verdict.retrieval.chunking import chunk_module
+from verdict.retrieval.documents import Document
+from verdict.retrieval.index import KnowledgeBase, tokenize
+from verdict.retrieval.mining.git_history import Commit
+from verdict.retrieval.risk import rank, score_symbols
+from verdict.targets import get_target
 
 MODULE = '''\
 """Module docstring."""

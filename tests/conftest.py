@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from precedent.llm.base import LLMRequest, LLMResponse, ProviderError
+from verdict.llm.base import LLMRequest, LLMResponse, ProviderError
 
 
 @dataclass

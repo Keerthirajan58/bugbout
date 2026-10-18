@@ -6,8 +6,8 @@ import re
 
 import pytest
 
-from precedent.targets import TARGETS, get_target, list_targets
-from precedent.targets.registry import UnknownTargetError
+from verdict.targets import TARGETS, get_target, list_targets
+from verdict.targets.registry import UnknownTargetError
 
 _FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 

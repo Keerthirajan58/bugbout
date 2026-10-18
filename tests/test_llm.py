@@ -12,10 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from precedent.llm.base import LLMRequest, LLMResponse, ProviderError, RateLimitedError
-from precedent.llm.cache import ResponseCache
-from precedent.llm.router import AllProvidersFailedError, LLMRouter
 from tests.conftest import FakeProvider
+from verdict.llm.base import LLMRequest, LLMResponse, ProviderError, RateLimitedError
+from verdict.llm.cache import ResponseCache
+from verdict.llm.router import AllProvidersFailedError, LLMRouter
 
 
 @pytest.fixture
@@ -338,7 +338,7 @@ class TestTruncationRetry:
     def _provider(monkeypatch, responses):  # type: ignore[no-untyped-def]
         import httpx
 
-        from precedent.llm import providers
+        from verdict.llm import providers
 
         sent: list[int] = []
 
@@ -388,7 +388,7 @@ class TestTruncationRetry:
         rather than as a self-inflicted one. That happened."""
         import httpx as httpx_module
 
-        from precedent.llm.providers import MAX_OUTPUT_CEILING
+        from verdict.llm.providers import MAX_OUTPUT_CEILING
 
         provider, sent, _ = self._provider(
             monkeypatch, [self._truncated(httpx_module), self._ok(httpx_module)]

@@ -29,7 +29,7 @@ export default function Home() {
           regressions?
         </h1>
         <p className="max-w-3xl" style={{ color: "var(--text-secondary)" }}>
-          Precedent audits a code change by writing a regression test against
+          Verdict audits a code change by writing a regression test against
           it, then proving that test by executing it on both versions of the
           code. This page reports the measurement that matters: the same agent,
           the same corpus, the same models — run once with the repository&apos;s

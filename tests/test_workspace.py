@@ -12,8 +12,8 @@ import itertools
 
 import pytest
 
-from precedent.targets import get_target
-from precedent.targets.workspace import (
+from verdict.targets import get_target
+from verdict.targets.workspace import (
     SuiteResult,
     TargetWorkspace,
     WorkspaceError,
@@ -219,14 +219,14 @@ class TestExecutableDiscovery:
     def test_finds_tools_outside_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Non-interactive shells often have a minimal PATH. Silently falling
         back to a worse toolchain is how the broken workspace above happened."""
-        from precedent.targets import workspace as module
+        from verdict.targets import workspace as module
 
         monkeypatch.setattr(module.shutil, "which", lambda _: None)
         found = module._find("definitely-not-a-real-binary-xyz")
         assert found is None
 
     def test_returns_path_when_available(self) -> None:
-        from precedent.targets.workspace import _find
+        from verdict.targets.workspace import _find
 
         assert _find("git") is not None
 

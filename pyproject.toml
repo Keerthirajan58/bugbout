@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "precedent"
+name = "verdict"
 dynamic = ["version"]
 description = "An adversarial, retrieval-grounded code verification agent."
 readme = "README.md"
@@ -53,16 +53,16 @@ dev = [
 ]
 
 [project.scripts]
-precedent = "precedent.cli:app"
+verdict = "verdict.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/Keerthirajan58/precedent"
+Homepage = "https://github.com/Keerthirajan58/verdict"
 
 [tool.hatch.version]
-path = "src/precedent/__about__.py"
+path = "src/verdict/__about__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/precedent"]
+packages = ["src/verdict"]
 
 [tool.ruff]
 line-length = 100
@@ -80,22 +80,22 @@ ignore = [
 # This module exists to run subprocesses. Every argv is built from the pinned
 # target registry or from literals, never from user input, and shell=False
 # throughout - so S603's "untrusted input" premise does not apply here.
-"src/precedent/targets/workspace.py" = ["S603"]
+"src/verdict/targets/workspace.py" = ["S603"]
 # Task mining reads the local clone through git and fetches issue text over
 # https. Every argv is a literal plus a commit range, and the URL is built from
 # a literal prefix - neither "untrusted input" nor "unexpected scheme" applies.
-"src/precedent/review/tasks.py" = ["S603", "S607", "S310"]
+"src/verdict/review/tasks.py" = ["S603", "S607", "S310"]
 # The bench runs git, tar and pytest against paths it created itself, with
 # shell=False throughout. The executables are resolved from PATH deliberately:
 # the point is to use the same toolchain the developer has.
-"src/precedent/review/bench.py" = ["S603", "S607"]
+"src/verdict/review/bench.py" = ["S603", "S607"]
 "tests/*" = ["ARG", "S101", "S105", "S106", "S603", "S607"]  # unused fixtures, bare asserts, fake credentials and git fixtures are the pytest idiom
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 warn_unreachable = true
-files = ["src/precedent"]
+files = ["src/verdict"]
 
 [[tool.mypy.overrides]]
 module = ["rank_bm25.*", "fastembed.*", "pgvector.*", "groq.*", "google.genai.*", "cosmic_ray.*"]
@@ -110,5 +110,5 @@ markers = [
 ]
 
 [tool.coverage.run]
-source = ["src/precedent"]
+source = ["src/verdict"]
 branch = true

@@ -84,7 +84,7 @@ export function RealDiffStudy({ tasks }: { tasks: RealDiffTask[] }) {
           [
             "broke a pre-existing test",
             String(broke.length),
-            audited ? `Precedent flagged ${caught}` : "not yet audited",
+            audited ? `Verdict flagged ${caught}` : "not yet audited",
           ],
         ].map(([label, value, detail]) => (
           <div
@@ -119,7 +119,7 @@ export function RealDiffStudy({ tasks }: { tasks: RealDiffTask[] }) {
           className="max-w-3xl text-sm"
           style={{ color: "var(--text-secondary)" }}
         >
-          Precedent is scored on the question it is built to answer. It proves{" "}
+          Verdict is scored on the question it is built to answer. It proves{" "}
           <em>regressions</em> — a test green before a diff and red after — so
           its recall is measured on the {broke.length} diffs that really did
           break something ({caught} flagged), and its false-alarm rate on the{" "}
@@ -139,7 +139,7 @@ export function RealDiffStudy({ tasks }: { tasks: RealDiffTask[] }) {
               <th className="py-2 text-left font-medium">fixed the bug</th>
               <th className="py-2 text-left font-medium">suite still green</th>
               {audited && (
-                <th className="py-2 text-left font-medium">Precedent</th>
+                <th className="py-2 text-left font-medium">Verdict</th>
               )}
             </tr>
           </thead>

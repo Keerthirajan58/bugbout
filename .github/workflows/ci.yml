@@ -74,7 +74,7 @@ jobs:
         run: uv pip install --system -e .
 
       - name: Prepare ${{ matrix.target }} at its pinned commit
-        run: precedent targets prepare ${{ matrix.target }}
+        run: verdict targets prepare ${{ matrix.target }}
 
       - name: Verify baseline suite is green
-        run: precedent targets verify ${{ matrix.target }}
+        run: verdict targets verify ${{ matrix.target }}

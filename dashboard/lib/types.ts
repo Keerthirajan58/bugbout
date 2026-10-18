@@ -1,4 +1,4 @@
-/** Shapes emitted by `precedent eval export`. Mirrors src/precedent/eval/export.py. */
+/** Shapes emitted by `verdict eval export`. Mirrors src/verdict/eval/export.py. */
 
 export type Arm = "no_retrieval" | "with_retrieval";
 

@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from precedent.artifacts import (
+from verdict.artifacts import (
     ArtifactIntegrityError,
     FrozenArtifactError,
     content_hash,
@@ -40,7 +40,7 @@ class TestRoundTrip:
         produced them."""
         write_artifact(artifact, kind="eval_run", payload={})
         env = read_artifact(artifact)["environment"]
-        assert env["precedent"] and env["python"] and env["cosmic_ray"]
+        assert env["verdict"] and env["python"] and env["cosmic_ray"]
 
     def test_rejects_the_wrong_kind(self, artifact: Path) -> None:
         write_artifact(artifact, kind="mutation_run", payload={})

@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from precedent.review.bench import AgentDiff, GroundTruth, TaskBench
-from precedent.review.tasks import GitHubText, IssueTask, mine_tasks, strip_solution
-from precedent.targets import get_target
+from verdict.review.bench import AgentDiff, GroundTruth, TaskBench
+from verdict.review.tasks import GitHubText, IssueTask, mine_tasks, strip_solution
+from verdict.targets import get_target
 
 
 class TestStripSolution:
@@ -257,12 +257,12 @@ class TestReporting:
 
     @staticmethod
     def _isolate(monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
-        monkeypatch.setenv("PRECEDENT_DATA_DIR", str(tmp_path))
+        monkeypatch.setenv("VERDICT_DATA_DIR", str(tmp_path))
 
     def test_an_unmeasured_section_says_so(self, monkeypatch, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
         """With no artifacts at all, every section must decline to report rather
         than print zeros - a zero reads as a measurement."""
-        from precedent.reporting import MISSING, build_report
+        from verdict.reporting import MISSING, build_report
 
         self._isolate(monkeypatch, tmp_path)
         document = build_report("marshmallow")
@@ -272,17 +272,17 @@ class TestReporting:
     def test_a_run_predating_the_gate_counter_shows_a_dash(self) -> None:
         """Not 0. A bare zero there would read as "no candidate was ever wrong
         about the library", which is the opposite of what those runs showed."""
-        from precedent.reporting import _gate_total
+        from verdict.reporting import _gate_total
 
         assert _gate_total([{"mutant_id": "a"}, {"mutant_id": "b"}]) == "-"
 
     def test_a_run_that_counted_the_gate_shows_the_total(self) -> None:
-        from precedent.reporting import _gate_total
+        from verdict.reporting import _gate_total
 
         assert _gate_total([{"gate_failures": 2}, {"gate_failures": 0}]) == "2"
 
     def test_splicing_replaces_only_the_generated_block(self, tmp_path: Path) -> None:
-        from precedent.reporting import splice_into
+        from verdict.reporting import splice_into
 
         document = tmp_path / "report.md"
         document.write_text(
@@ -298,7 +298,7 @@ class TestReporting:
     def test_splicing_a_report_with_no_block_is_an_error(self, tmp_path: Path) -> None:
         """Silently appending would produce a report whose numbers are never
         refreshed, which is worse than failing."""
-        from precedent.reporting import splice_into
+        from verdict.reporting import splice_into
 
         document = tmp_path / "report.md"
         document.write_text("no markers here\n")

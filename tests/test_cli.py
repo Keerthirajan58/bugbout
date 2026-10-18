@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typer.testing import CliRunner
 
-from precedent import __version__
-from precedent.cli import app
+from verdict import __version__
+from verdict.cli import app
 
 runner = CliRunner()
 
@@ -37,4 +37,4 @@ def test_unknown_target_is_reported_not_traced() -> None:
 
 def test_bare_invocation_shows_help() -> None:
     result = runner.invoke(app, [])
-    assert "precedent" in result.stdout.lower()
+    assert "verdict" in result.stdout.lower()

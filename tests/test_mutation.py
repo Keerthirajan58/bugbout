@@ -13,15 +13,15 @@ from __future__ import annotations
 import cosmic_ray.plugins as plugins
 import pytest
 
-from precedent.mutation.mutant import MutantResult, MutantSpec, make_unified_diff
-from precedent.mutation.operators import (
+from verdict.mutation.mutant import MutantResult, MutantSpec, make_unified_diff
+from verdict.mutation.operators import (
     DEFAULT_OPERATORS,
     EXCLUDED_WITH_REASON,
     OPERATOR_FAMILIES,
     family_of,
 )
-from precedent.mutation.runner import MutationRunner, RunStats, stats_from
-from precedent.targets.workspace import SuiteResult
+from verdict.mutation.runner import MutationRunner, RunStats, stats_from
+from verdict.targets.workspace import SuiteResult
 
 
 def _spec(module_path: str = "src/pkg/mod.py", operator: str = "core/AddNot") -> MutantSpec:

@@ -18,7 +18,7 @@ export function AblationChart({ rows }: { rows: Ablation[] }) {
         style={{ borderColor: "var(--border)", color: "var(--text-secondary)" }}
       >
         Both arms must have run before an ablation can be shown. Run{" "}
-        <code>precedent eval run &lt;target&gt; --arm with_retrieval</code>.
+        <code>verdict eval run &lt;target&gt; --arm with_retrieval</code>.
       </div>
     );
   }

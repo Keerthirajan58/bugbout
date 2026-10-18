@@ -7,17 +7,17 @@ from pathlib import Path
 
 import pytest
 
-from precedent.agents.change import CodeChange, FileVersion
-from precedent.agents.context import build_context
-from precedent.agents.prosecutor import Accusation, Prosecutor
-from precedent.agents.skeptic import Skeptic, SkepticVerdict
-from precedent.eval.case import CaseOutcome
-from precedent.eval.harness import EvalHarness, stats_from
-from precedent.eval.pool import AgentPool
-from precedent.llm.cache import ResponseCache
-from precedent.llm.router import LLMRouter
-from precedent.mutation.mutant import MutantResult, MutantSpec
 from tests.conftest import FakeProvider
+from verdict.agents.change import CodeChange, FileVersion
+from verdict.agents.context import build_context
+from verdict.agents.prosecutor import Accusation, Prosecutor
+from verdict.agents.skeptic import Skeptic, SkepticVerdict
+from verdict.eval.case import CaseOutcome
+from verdict.eval.harness import EvalHarness, stats_from
+from verdict.eval.pool import AgentPool
+from verdict.llm.cache import ResponseCache
+from verdict.llm.router import LLMRouter
+from verdict.mutation.mutant import MutantResult, MutantSpec
 
 SOURCE = '''\
 def set_value(dct, key, value):
