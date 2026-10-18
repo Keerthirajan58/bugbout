@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from verdict import __version__
+from verdict.cli.arena import arena_app
 from verdict.cli.demo import demo_app
 from verdict.cli.evaluate import eval_app, verify
 from verdict.cli.kb import kb_app
@@ -26,10 +27,11 @@ from verdict.targets.workspace import TargetWorkspace
 
 app = typer.Typer(
     name="verdict",
-    help="An adversarial, retrieval-grounded code verification agent.",
+    help="Race coding agents on the same issue and let executed tests pick the patch.",
     no_args_is_help=True,
     add_completion=False,
 )
+app.add_typer(arena_app)
 app.add_typer(targets_app)
 app.add_typer(mutants_app)
 app.add_typer(kb_app)

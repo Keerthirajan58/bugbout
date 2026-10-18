@@ -170,6 +170,21 @@ class GroqProvider:
             raise ProviderError(f"groq transport error: {exc}") from exc
 
 
+class OllamaProvider(GroqProvider):
+    """A local model behind Ollama's OpenAI-compatible endpoint.
+
+    Same wire format as Groq, so it shares the implementation; it differs only
+    in where it lives and in having no quota at all - which makes it the lane
+    that never runs out when the free cloud tiers do.
+    """
+
+    name = "ollama"
+
+    def __init__(self, model: str, port: int = 11435) -> None:
+        super().__init__("ollama", model)
+        self._URL = f"http://127.0.0.1:{port}/v1/chat/completions"
+
+
 # How much more budget a truncated call is given on its one retry, and the hard
 # ceiling it may not exceed.
 #

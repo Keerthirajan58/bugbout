@@ -92,6 +92,25 @@ class Patch:
         chunks = [parsed[rel].text for rel in sorted(parsed) if rel.startswith(prefix) == keep]
         return Patch("".join(chunks))
 
+    def created(self) -> dict[str, str]:
+        """Files the patch brings into existence, with their full content."""
+        return {
+            rel: "".join(_apply_hunks(rel, [], change.hunks))
+            for rel, change in _parse(self.diff).items()
+            if change.created
+        }
+
+    def touched_lines(self) -> dict[str, set[int]]:
+        """Per existing file, the 1-based lines of the ORIGINAL a hunk spans."""
+        spans: dict[str, set[int]] = {}
+        for rel, change in _parse(self.diff).items():
+            if change.created:
+                continue
+            for old_start, body in change.hunks:
+                old_len = sum(1 for line in body if line[:1] in (" ", "-"))
+                spans.setdefault(rel, set()).update(range(old_start, old_start + max(old_len, 1)))
+        return spans
+
     # --- application ---------------------------------------------------------
 
     def apply(self, root: Path) -> None:
