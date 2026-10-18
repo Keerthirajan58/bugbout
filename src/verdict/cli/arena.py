@@ -6,6 +6,10 @@ Run in order; each command writes an artifact the next one reads:
 ``import-recorded``  admit the earlier study's Claude Code patches as an entrant
 ``race``             run coding agents on every task, concurrently and resumably
 ``score``            grade every entrant's patches against the hidden oracles
+``examine``          blind examiners write reproduction tests from each issue alone
+``cross``            run every exhibit against every fix and the untouched base
+``judge``            pick a patch per task from its matrix, or abstain
+``report``           score the judge's picks beside every baseline
 """
 
 from __future__ import annotations
@@ -19,7 +23,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
-from verdict.arena import recorded
+from verdict.arena import recorded, scoreboard
 from verdict.arena.contestants import (
     CodexContestant,
     Contestant,
@@ -27,19 +31,30 @@ from verdict.arena.contestants import (
     MiniSweAgentContestant,
     OllamaServer,
 )
+from verdict.arena.examiners import Examiner, Exhibit, source_context
+from verdict.arena.judge import judge
+from verdict.arena.matrix import CrossExaminer, Matrix, fixes_only, self_exhibits
 from verdict.arena.patch import Patch
 from verdict.arena.race import Race
 from verdict.arena.store import (
     list_entrants,
     load_entries,
+    load_exhibits,
+    load_matrices,
     load_oracles,
+    load_resolutions,
+    load_verdicts,
     save_entries,
+    save_exhibits,
+    save_matrices,
     save_oracles,
     save_resolutions,
+    save_verdicts,
 )
 from verdict.arena.truth import Referee, Resolution
 from verdict.artifacts import ArtifactError
 from verdict.config import load_settings
+from verdict.llm.providers import GeminiProvider, GroqProvider, OllamaProvider
 from verdict.paths import verdict_home
 from verdict.review.bench import TaskBench
 from verdict.review.store import load_diffs, load_tasks
@@ -256,3 +271,167 @@ def arena_score() -> None:
     out.print(table)
     path, digest = save_resolutions(resolutions)
     out.print(f"  saved {path}  {digest[:16]}...")
+
+
+def _entry_patches(task_ids: set[str]) -> dict[str, dict[str, Patch]]:
+    """task -> entrant -> that entrant's whole patch, for every recorded entrant."""
+    patches: dict[str, dict[str, Patch]] = defaultdict(dict)
+    for entrant in list_entrants():
+        for entry in load_entries(entrant)["entries"]:
+            if entry["task_id"] in task_ids and entry.get("patch", {}).get("diff"):
+                patches[entry["task_id"]][entrant] = Patch.from_dict(entry["patch"])
+    return patches
+
+
+def _examiners(local: bool) -> list[Examiner]:
+    settings = load_settings()
+    examiners = [
+        Examiner(
+            "examiner/gemini-flash",
+            "google",
+            [
+                GeminiProvider(settings.require("gemini_api_key"), model=m)
+                for m in ("gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.6-flash")
+            ],
+            context_budget=40_000,
+        ),
+        # Groq books prompt + max_tokens against 8,000 tokens a minute, so the
+        # context is held to what fits beside a 4,096-token answer.
+        Examiner(
+            "examiner/qwen3.8-27b",
+            "alibaba",
+            [
+                GroqProvider(settings.require("groq_api_key"), model=m)
+                for m in ("qwen/qwen3.8-27b", "qwen/qwen3.6-27b")
+            ],
+            context_budget=9_000,
+        ),
+    ]
+    if local:
+        examiners.append(
+            Examiner(
+                "examiner/gpt-oss-20b",
+                "openai",
+                [OllamaProvider("gpt-oss:20b", port=OllamaServer.PORT)],
+                context_budget=40_000,
+            )
+        )
+    return examiners
+
+
+@arena_app.command("examine")
+def arena_examine(
+    local: Annotated[bool, typer.Option(help="Add the local gpt-oss examiner.")] = False,
+) -> None:
+    """Blind examiners write regression tests from each issue alone.
+
+    They see the issue and the base version of the files the contestants
+    changed - never a patch. One call per examiner per task.
+    """
+    tasks = _tasks()
+    patches = _entry_patches({t.task_id for t in tasks})
+    examiners = _examiners(local)
+    exhibits: list[dict[str, object]] = []
+    with OllamaServer() if local else nullcontext():
+        for task in tasks:
+            bench = arena_bench(task.target_slug)
+            base = verdict_home() / "pristine" / task.task_id
+            if not base.exists():
+                bench.archive(task.base_commit, base)
+            test_root = bench.target.test_root
+            touched: dict[str, set[int]] = {}
+            counts: dict[str, int] = defaultdict(int)
+            for patch in patches.get(task.task_id, {}).values():
+                for rel, lines in patch.only(under=test_root, keep=False).touched_lines().items():
+                    touched.setdefault(rel, set()).update(lines)
+                    counts[rel] += 1
+            files = sorted(counts, key=lambda f: -counts[f])
+            for examiner in examiners:
+                context = source_context(base, files, touched, examiner.context_budget)
+                exhibit = examiner.examine(task, bench.target.full_name, context)
+                exhibits.append(exhibit.to_dict())
+                state = f"[red]{exhibit.error[:90]}[/red]" if exhibit.error else exhibit.model
+                out.print(
+                    f"  {task.target_slug:12s} #{task.reference:<6} {examiner.author:26s} {state}"
+                )
+    path = save_exhibits(
+        exhibits,
+        {
+            e.author: {"family": e.family, "models": [p.model for p in e.providers]}
+            for e in examiners
+        },
+    )
+    written = sum(1 for e in exhibits if e["test_code"])
+    out.print(f"\n[bold]{written}/{len(exhibits)}[/bold] exhibits written  ->  {path}")
+
+
+@arena_app.command("cross")
+def arena_cross() -> None:
+    """Run every exhibit against every fix and the untouched base."""
+    tasks = _tasks()
+    patches = _entry_patches({t.task_id for t in tasks})
+    try:
+        blind = [Exhibit.from_dict(e) for e in load_exhibits()]
+    except ArtifactError:
+        blind = []
+        out.print(
+            "[yellow]No blind exhibits yet; only contestants' own tests will be used.[/yellow]"
+        )
+    matrices = []
+    for task in tasks:
+        bench = arena_bench(task.target_slug)
+        entries = patches.get(task.task_id, {})
+        test_root = bench.target.test_root
+        exhibits = [
+            *self_exhibits(task, entries, test_root),
+            *(e for e in blind if e.task_id == task.task_id and e.test_code),
+        ]
+        fixes = fixes_only(entries, test_root)
+        matrix = CrossExaminer(bench, verdict_home() / "scratch").build(task, fixes, exhibits)
+        matrices.append(matrix.to_dict())
+        sizes = ", ".join(f"{t}={len(o)}" for t, o in matrix.outcomes.items())
+        out.print(
+            f"  {task.target_slug:12s} #{task.reference:<6} {len(exhibits)} exhibits  {sizes}"
+        )
+    path = save_matrices(matrices)
+    out.print(f"\n[bold]{len(matrices)}[/bold] matrices  ->  {path}")
+
+
+@arena_app.command("judge")
+def arena_judge() -> None:
+    """Pick a patch per task from its matrix alone - or abstain."""
+    verdicts = [judge(Matrix.from_dict(m)) for m in load_matrices()]
+    path = save_verdicts([v.to_dict() for v in verdicts])
+    for v in verdicts:
+        colour = "green" if v.chosen else "yellow"
+        out.print(f"  {v.task_id}  [{colour}]{v.chosen or 'abstain'}[/{colour}]  {v.reason}")
+    out.print(f"\n  saved {path}")
+
+
+@arena_app.command("report")
+def arena_report() -> None:
+    """Score the judge's picks against the hidden oracles, beside every baseline."""
+    tasks = _tasks()
+    ids = [t.task_id for t in tasks]
+    matrices = {m["task_id"]: m for m in load_matrices()}
+    candidates = {tid: [t for t in m["trees"] if t != "base"] for tid, m in matrices.items()}
+    board = scoreboard.build(ids, load_resolutions(), load_verdicts(), candidates)
+
+    table = Table(title=f"{board.tasks} real bugs, scored by the maintainers' hidden tests")
+    for column in ("Selector", "Resolved", "Note"):
+        table.add_column(column)
+    for entrant, stats in sorted(board.per_entrant.items(), key=lambda kv: -kv[1]["resolved"]):
+        table.add_row(
+            entrant,
+            f"{stats['resolved']}/{board.tasks}",
+            f"broke existing tests on {stats['broke_tests']}",
+        )
+    table.add_row("random pick among patches", f"{board.random_pick:.1f}/{board.tasks}", "expected")
+    table.add_row(
+        "[bold]Verdict[/bold]",
+        f"[bold]{board.verdict_resolved}/{board.tasks}[/bold]",
+        f"{board.verdict_picks} picks, {board.wrong_picks} wrong, "
+        f"{board.verdict_abstained} abstained ({board.abstained_correctly} correctly)",
+    )
+    table.add_row("best possible (any agent)", f"{board.best_possible}/{board.tasks}", "ceiling")
+    out.print(table)

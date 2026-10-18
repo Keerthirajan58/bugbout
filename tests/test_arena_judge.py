@@ -80,3 +80,38 @@ def test_abstains_when_nothing_clears_half_the_evidence() -> None:
     verdict = judge(_matrix(outcomes, _exhibits()))
     assert verdict.chosen is None
     assert "half" in verdict.reason
+
+
+def test_the_compact_matrix_round_trips() -> None:
+    outcomes = {
+        BASE: {"tests.a::t1": P, "tests.a::t2": F},
+        CLAUDE: {"tests.a::t1": P, "tests.a::t2": P, "tests.b::new": "error"},
+    }
+    original = _matrix(outcomes, _exhibits())
+    restored = Matrix.from_dict(original.to_dict())
+    assert restored.outcomes == outcomes
+    assert restored.exhibits == original.exhibits
+
+
+def test_the_scoreboard_scores_picks_against_the_hidden_oracle() -> None:
+    from verdict.arena import scoreboard
+    from verdict.arena.truth import Resolution
+
+    def res(task: str, entrant: str, ok: bool) -> Resolution:
+        return Resolution(task, entrant, True, ok, 1 if ok else 0, 1, (), 10)
+
+    resolutions = [
+        res("t1", "a", True),
+        res("t1", "b", False),
+        res("t2", "a", False),
+        res("t2", "b", False),
+    ]
+    verdicts = [{"task_id": "t1", "chosen": "a"}, {"task_id": "t2", "chosen": None}]
+    board = scoreboard.build(
+        ["t1", "t2"], resolutions, verdicts, {"t1": ["a", "b"], "t2": ["a", "b"]}
+    )
+    assert board.verdict_resolved == 1 and board.wrong_picks == 0
+    assert board.verdict_abstained == 1 and board.abstained_correctly == 1
+    assert board.best_possible == 1
+    assert board.random_pick == 0.5
+    assert board.best_single == ("a", 1)

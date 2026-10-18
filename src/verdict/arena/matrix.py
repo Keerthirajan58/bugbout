@@ -96,11 +96,40 @@ class Matrix:
         return None
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        """Compact form: one table of test ids, one outcome string per tree.
+
+        A task's matrix is ~1,500 tests across five trees. As nested JSON that
+        is megabytes per task; as a shared column header plus a character per
+        cell it is small enough to commit as evidence.
+        """
+        tests = sorted({t for row in self.outcomes.values() for t in row})
+        rows = {
+            tree: "".join(_CODE[self.outcomes.get(tree, {}).get(t, "absent")] for t in tests)
+            for tree in self.trees
+        }
+        data = asdict(self)
+        del data["outcomes"]
+        return {**data, "tests": tests, "rows": rows}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Matrix:
-        return cls(**{k: data[k] for k in cls.__dataclass_fields__ if k in data})
+        tests: list[str] = data["tests"]
+        outcomes = {
+            tree: {t: _OUTCOME[c] for t, c in zip(tests, row, strict=True) if c != "-"}
+            for tree, row in data["rows"].items()
+        }
+        return cls(
+            task_id=data["task_id"],
+            trees=list(data["trees"]),
+            exhibits=dict(data["exhibits"]),
+            outcomes=outcomes,
+            lines_changed=dict(data.get("lines_changed", {})),
+            notes=dict(data.get("notes", {})),
+        )
+
+
+_CODE = {"passed": "P", "failed": "F", "error": "E", "skipped": "S", "absent": "-"}
+_OUTCOME = {v: k for k, v in _CODE.items()}
 
 
 class CrossExaminer:

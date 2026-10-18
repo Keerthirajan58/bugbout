@@ -74,3 +74,44 @@ def load_resolutions() -> list[Resolution]:
         read_artifact(arena_dir() / "resolutions.json", expect_kind=KIND_RESOLUTIONS)
     )
     return [Resolution.from_dict(r) for r in payload["resolutions"]]
+
+
+KIND_EXHIBITS = "arena_exhibits"
+KIND_MATRICES = "arena_matrices"
+KIND_VERDICTS = "arena_verdicts"
+
+
+def save_exhibits(exhibits: list[dict[str, Any]], examiners: dict[str, Any]) -> Path:
+    path = arena_dir() / "exhibits.json"
+    write_artifact(path, kind=KIND_EXHIBITS, payload={"examiners": examiners, "exhibits": exhibits})
+    return path
+
+
+def load_exhibits() -> list[dict[str, Any]]:
+    payload = payload_of(read_artifact(arena_dir() / "exhibits.json", expect_kind=KIND_EXHIBITS))
+    exhibits: list[dict[str, Any]] = payload["exhibits"]
+    return exhibits
+
+
+def save_matrices(matrices: list[dict[str, Any]]) -> Path:
+    path = arena_dir() / "matrices.json"
+    write_artifact(path, kind=KIND_MATRICES, payload={"matrices": matrices})
+    return path
+
+
+def load_matrices() -> list[dict[str, Any]]:
+    payload = payload_of(read_artifact(arena_dir() / "matrices.json", expect_kind=KIND_MATRICES))
+    matrices: list[dict[str, Any]] = payload["matrices"]
+    return matrices
+
+
+def save_verdicts(verdicts: list[dict[str, Any]]) -> Path:
+    path = arena_dir() / "verdicts.json"
+    write_artifact(path, kind=KIND_VERDICTS, payload={"verdicts": verdicts})
+    return path
+
+
+def load_verdicts() -> list[dict[str, Any]]:
+    payload = payload_of(read_artifact(arena_dir() / "verdicts.json", expect_kind=KIND_VERDICTS))
+    verdicts: list[dict[str, Any]] = payload["verdicts"]
+    return verdicts
