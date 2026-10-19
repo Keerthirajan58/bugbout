@@ -1,221 +1,57 @@
 # Verdict
 
-**Several coding agents fix the same real bug. Independent agents write the tests
-that judge them. Executed tests - never a model's opinion - decide what may merge.**
+Verdict runs several AI coding agents on the same bug, has other agents write the
+tests a correct fix must pass, and decides which patch is safe to merge by running
+those tests - not by asking a model for its opinion.
 
-Verdict is an orchestration harness and a measurement. It drives off-the-shelf
-coding-agent CLIs (Codex, mini-swe-agent, Gemini CLI) headlessly against bugs
-reconstructed from real repositories, has examiner agents capture each issue as
-tests without ever seeing a patch, cross-examines every patch with every test, and
-judges from the executed results alone. Every number below is scored against the
-maintainers' own hidden tests, and the headline numbers come from a suite of bugs
-the system was never tuned on.
+## Why
 
----
+Coding agents are fast, and they report success whether or not the fix is right.
+Reviewing every agent-written patch by hand doesn't scale, and asking another model
+to "review" it just adds a second opinion. Verdict replaces opinions with evidence:
 
-## Results
-
-<!-- results:begin -->
-
-### Held-out suite - 30 real bugs, policy `cross-executed`
-
-**20 of 60** agent attempts did not resolve their bug by the maintainers' tests. Of those wrong patches, **16 of 18** pass every reproduction an examiner wrote from the issue: they fix the symptom the issue describes and still fail the maintainer's tests.
-
-**Gating a patch** - an agent says it is done; may it merge?
-
-| Patches | Correct | Wrong |
-|---|---|---|
-| approved (56) | 39 | 17 |
-| rejected (4) | 1 | 3 |
-| unverified (0) | 0 | 0 |
-| **all** (60) | 40 | 20 |
-
-Precision of an approval: **70%**, against 67% for merging every patch an agent reported done. Wrong patches caught: **3/20**. Correct patches rejected: 1/40.
-
-**Choosing a patch** - several agents fixed the same issue; which one ships?
-
-| Selector | Resolved |
-|---|---|
-| codex/gpt-5.6-luna alone | 20/30 |
-| codex/gpt-6.1-sol alone | 20/30 |
-| random pick among the patches | 20.0/30 |
-| **Verdict** (policy `cross-executed`) | **21/30** |
-| best possible (any agent solved it) | 22/30 |
-
-Verdict picked a patch on 29 tasks (8 wrong) and abstained on 1 (1 of them tasks no agent solved).
-
-**How much each source of evidence can tell** - correct from wrong patches
-
-| Evidence source | AUC | Correct / wrong patches scored |
-|---|---|---|
-| codex/gpt-6.1-sol | 0.77 | 20 / 10 |
-| examiner/specify/codex/gpt-6.1-sol | 0.64 | 31 / 17 |
-| examiner/reproduce/mini-swe-agent/codestral-latest | 0.55 | 27 / 17 |
-| examiner/reproduce/codex/gpt-6.1-sol | 0.53 | 40 / 18 |
-| codex/gpt-5.6-luna | 0.53 | 20 / 10 |
-| the repository's existing suite | 0.45 | 40 / 20 |
-
-AUC: the chance that a correct patch scores higher than a wrong one on that source's tests - 0.5 is a coin flip. No author is scored on its own patch.
-
-### Development suite (in-sample) - 22 real bugs, policy `cross-executed`, field: claude-code, codex/gpt-5.6-luna, codex/gpt-6.1-sol
-
-**27 of 66** agent attempts did not resolve their bug by the maintainers' tests. Of those wrong patches, **22 of 24** pass every reproduction an examiner wrote from the issue: they fix the symptom the issue describes and still fail the maintainer's tests.
-
-**Gating a patch** - an agent says it is done; may it merge?
-
-| Patches | Correct | Wrong |
-|---|---|---|
-| approved (58) | 38 | 20 |
-| rejected (7) | 1 | 6 |
-| unverified (0) | 0 | 0 |
-| **all** (65) | 39 | 26 |
-
-Precision of an approval: **66%**, against 60% for merging every patch an agent reported done. Wrong patches caught: **6/26**. Correct patches rejected: 1/39.
-
-**Choosing a patch** - several agents fixed the same issue; which one ships?
-
-| Selector | Resolved |
-|---|---|
-| claude-code alone | 16/22 |
-| codex/gpt-6.1-sol alone | 14/22 |
-| codex/gpt-5.6-luna alone | 9/22 |
-| random pick among the patches | 13.0/22 |
-| **Verdict** (policy `cross-executed`) | **15/22** |
-| best possible (any agent solved it) | 17/22 |
-
-Verdict picked a patch on 21 tasks (6 wrong) and abstained on 1 (1 of them tasks no agent solved).
-
-**How much each source of evidence can tell** - correct from wrong patches
-
-| Evidence source | AUC | Correct / wrong patches scored |
-|---|---|---|
-| codex/gpt-6.1-sol | 0.73 | 25 / 18 |
-| examiner/qwen3.8-27b | 0.65 | 27 / 20 |
-| examiner/specify/codex/gpt-6.1-sol | 0.61 | 39 / 24 |
-| examiner/reproduce/mini-swe-agent/codestral-latest | 0.57 | 29 / 18 |
-| the repository's existing suite | 0.56 | 39 / 26 |
-| codex/gpt-5.6-luna | 0.54 | 30 / 13 |
-| examiner/reproduce/codex/gpt-6.1-sol | 0.49 | 39 / 24 |
-| examiner/gemini-flash | 0.41 | 35 / 22 |
-
-AUC: the chance that a correct patch scores higher than a wrong one on that source's tests - 0.5 is a coin flip. No author is scored on its own patch.
-
-<!-- results:end -->
-
----
-
-## What it found
-
-- **Agents report success either way.** Every Codex attempt on the held-out suite
-  ended by reporting success; the results above show how many of those patches the
-  maintainers' tests reject.
-- **Wrong patches fix the symptom, not the bug.** Nearly every wrong patch passes
-  every reproduction an examiner wrote from the issue - it fixes what the issue
-  describes - and still fails the maintainer's tests, which check the rule behind it.
-- **Tests written from the issue barely separate right from wrong.** Five examiner
-  designs were measured, including agents that execute their tests and agents told
-  to think like the reviewing maintainer. Most land near a coin flip.
-- **The best evidence comes from whoever actually solved the bug.** The strongest
-  contestant's own regression tests - validated against a working fix - were the
-  most informative source. A blind test encodes its writer's guess at the
-  maintainer's intent, and that guess is wrong about as often as the patches are.
-  Verification is bounded by the verifier's ability to solve the problem.
-- **Picking among agents pays only where they disagree.** A selector can at best
-  recover the bugs one agent solved and another did not; when one agent dominates,
-  it can match that agent and no more.
+- **Pick the best patch** when several agents attempt the same issue.
+- **Gate a patch** before it merges: approve it, reject it, or flag that nothing
+  independent has verified it.
+- **See why** - every decision traces back to concrete tests and how they ran on
+  each patch.
 
 ## How it works
 
-```
-real merged fix ──▶ task: repo at the parent commit (no .git), issue text only
-                    oracle: FAIL_TO_PASS + PASS_TO_PASS from the maintainer's tests (hidden)
+1. **Race** - coding agents (Codex CLI, mini-swe-agent, Gemini CLI) each fix the
+   issue in their own sandboxed checkout.
+2. **Examine** - examiner agents write the tests a fix must pass, from the issue
+   alone, without ever seeing a patch.
+3. **Cross-examine** - every test runs against every patch and the unfixed code.
+4. **Judge** - simple, explicit rules over the executed results approve, reject or
+   pick a patch.
 
-  1. race      coding agents fix the issue, each in its own sealed checkout
-  2. examine   examiner agents write the tests a fix must pass - seeing no patch
-  3. cross     every test on every fix and on the unfixed code, plus the full suite
-  4. judge     rules over executed results: approve, reject, or pick a patch
-  5. score     every decision against the hidden oracle
-```
+Agents run headlessly with clean configs, no web access and no git history to peek
+at; runs are journaled, so an interrupted race resumes without redoing work.
 
-| Stage | What makes it trustworthy |
-|---|---|
-| Tasks | `git archive` checkouts with no history; oracles must fail before the fix and pass after it, SWE-bench style; flaky tests excluded |
-| Race | the same binaries developers run, from clean configs, web tools off, shell network off; patches measured from disk, never from an agent's account |
-| Examine | examiners never see a patch; agentic ones must run their tests against the unfixed code first |
-| Cross | only a patch's source changes are applied; every exhibit installed under its own module; a collection error cannot abort the run |
-| Judge | a reproduction counts only if it fails on the unfixed code; no author vouches for its own patch; rules are data (`JudgePolicy`) |
+## Getting started
 
-### The orchestration
-
-- **Lanes, not workers.** Work is queued per quota - a ChatGPT plan, a free API
-  key, a local model - lanes run in parallel and each caps its own concurrency, so
-  a slow lane never stalls a fast one.
-- **Journaled and resumable.** Every attempt writes its result atomically; an
-  interrupted race resumes and never spends an agent's quota twice. A run that
-  hit a quota is recorded as such, not as the agent's answer.
-- **Sandboxed per harness.** Codex runs in its own workspace-write sandbox;
-  mini-swe-agent's commands go through a seatbelt profile (no network, writes only
-  in the checkout) while its model calls stay outside it; local models get a
-  private Ollama server with a context window an agent fits in.
-- **One race, two roles.** Fixing an issue and capturing it as tests differ only
-  in the brief (`Fix`, `Reproduce`, `Specify`), so contestants and examiners share
-  the same isolation, journal and lanes.
-
-## How the numbers were kept honest
-
-1. **Ground truth from the maintainers.** A patch resolves a task only if every
-   FAIL_TO_PASS test passes and every PASS_TO_PASS test still passes. Adopting this
-   definition flipped six of the earlier study's verdicts.
-2. **Develop on one suite, report on another.** The design was built on bugs from
-   marshmallow, attrs and arrow. The held-out suite - sqlparse and tomlkit - was
-   mined afterwards.
-3. **Declare before measuring.** Each round of candidate judge policies, and the
-   procedure for freezing one, was committed before its evidence was judged. The
-   freeze itself is a commit and the tag `frozen-policy`, made before any held-out
-   number existed. The first design's development score is kept as the
-   pre-registered result.
-4. **No hand-typed numbers.** Every table in this README is written by
-   `verdict arena results --into README.md` from content-hashed artifacts.
-
-## Run it
+Requires Python 3.12 and at least one coding-agent CLI.
 
 ```bash
-python3.12 -m venv RagAgent && ./RagAgent/bin/pip install -e ".[dev,llm]"
-npm install -g @openai/codex && codex login          # ChatGPT sign-in
-uv tool install mini-swe-agent --with mcp            # optional third harness
+python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev,llm]"
+npm install -g @openai/codex && codex login
 
-verdict arena oracles --suite test                   # FAIL_TO_PASS / PASS_TO_PASS per task
-verdict arena race -e codex -e codex-mini --suite test
-verdict arena examine -x codex-reproducer -x codex-specifier -x codestral-reproducer --suite test
-verdict arena cross --suite test                     # every test x every fix x the base
-verdict arena score --suite test                     # hidden-oracle ground truth
-verdict arena analyze --suite test --policy cross-executed
-verdict arena evidence --suite test                  # raw signal of each evidence source
+verdict arena --help
 ```
 
-The dashboard (`dashboard/`) is a static site over the exported bundles:
-`verdict arena export --suite test --policy cross-executed`, then `npm run build`.
+A typical run over a suite of tasks:
 
-## Repository layout
+```bash
+verdict arena oracles --suite test
+verdict arena race -e codex -e codex-mini --suite test
+verdict arena examine -x codex-reproducer -x codex-specifier --suite test
+verdict arena cross --suite test
+verdict arena judge --suite test --policy cross-executed
+```
 
-| Path | |
-|---|---|
-| [`src/verdict/arena/`](src/verdict/arena/) | agents, assignments, race, examiners, matrix, judge, analysis, workflow |
-| [`src/verdict/cli/arena.py`](src/verdict/cli/arena.py) | the `verdict arena` commands - options in, tables out |
-| [`data/artifacts/arena/`](data/artifacts/arena/) | the evidence: tasks, oracles, every patch, exhibit, matrix and verdict, per suite |
-| [`dashboard/`](dashboard/) | the static results site |
-| [`src/verdict/mutation/`](src/verdict/mutation/), [`retrieval/`](src/verdict/retrieval/) | the earlier mutation-testing study, kept with its reports |
-
-## Limitations
-
-- Python only, and three plus two repositories: free and subscription tiers bounded
-  how many tasks every agent could attempt.
-- The development suite's Claude Code patches were recorded by an earlier study and
-  not re-run; the held-out field is two OpenAI models.
-- Tests written from an issue can only check what the issue implies; when every
-  agent makes the same partial fix, no examiner that shares their reading can
-  catch it.
-- macOS seatbelt sandboxes contain accidents, not adversaries.
+The `dashboard/` folder is a static Next.js site for browsing every task, patch and
+test.
 
 ## License
 
