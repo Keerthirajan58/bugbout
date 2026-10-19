@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from verdict.arena import scoreboard
 from verdict.arena.judge import Judge, JudgePolicy, Verdict
-from verdict.arena.matrix import Matrix
+from verdict.arena.matrix import BASE, Matrix
 from verdict.arena.truth import Resolution
 
 
@@ -117,3 +117,63 @@ def gate_stats(verdicts: tuple[Verdict, ...], resolutions: list[Resolution]) -> 
                 outcome = "unverified"
             counts[f"{outcome}_{truth}"] += 1
     return GateStats(**counts)
+
+
+@dataclass(frozen=True, slots=True)
+class SourceSignal:
+    """How well one source of evidence separates correct patches from wrong ones."""
+
+    source: str
+    auc: float
+    """Probability that a random correct patch scores above a random wrong one
+    (ties count half): 0.5 is a coin flip, 1.0 a perfect separation."""
+
+    correct: int
+    wrong: int
+
+
+def evidence_signal(
+    matrices: dict[str, Matrix], resolutions: list[Resolution]
+) -> list[SourceSignal]:
+    """The AUC of every exhibit author, and of the existing suite, across a suite.
+
+    A patch's score from an author is the fraction of that author's reproductions
+    (tests that fail on the base) it passes; an author is never scored on its own
+    patch. For the existing suite, the score is the number of base-passing tests
+    the patch breaks, negated. No rule or threshold is involved: this is the raw
+    signal every policy is built on.
+    """
+    resolved = {(r.task_id, r.entrant): r.resolved for r in resolutions}
+    scores: dict[str, list[tuple[float, bool]]] = {}
+    for task_id, matrix in matrices.items():
+        base = matrix.outcomes.get(BASE, {})
+        for author, module in matrix.exhibits.items():
+            repro = [t for t, o in base.items() if module in t and o == "failed"]
+            for candidate in matrix.candidates:
+                if repro and candidate != author:
+                    passed = sum(matrix.passes(candidate, t) for t in repro) / len(repro)
+                    scores.setdefault(author, []).append(
+                        (passed, resolved.get((task_id, candidate), False))
+                    )
+        suite = [t for t, o in base.items() if o == "passed" and matrix.author_of(t) is None]
+        for candidate in matrix.candidates:
+            broken = sum(not matrix.passes(candidate, t) for t in suite)
+            scores.setdefault(EXISTING_SUITE, []).append(
+                (-broken, resolved.get((task_id, candidate), False))
+            )
+    return sorted(
+        (_signal(source, pairs) for source, pairs in scores.items()),
+        key=lambda s: -s.auc,
+    )
+
+
+EXISTING_SUITE = "the repository's existing suite"
+
+
+def _signal(source: str, pairs: list[tuple[float, bool]]) -> SourceSignal:
+    good = [score for score, ok in pairs if ok]
+    bad = [score for score, ok in pairs if not ok]
+    if not good or not bad:
+        return SourceSignal(source, float("nan"), len(good), len(bad))
+    wins = sum((g > b) + 0.5 * (g == b) for g in good for b in bad)
+    return SourceSignal(source, wins / (len(good) * len(bad)), len(good), len(bad))

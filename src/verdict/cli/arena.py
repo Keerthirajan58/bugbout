@@ -238,6 +238,17 @@ def analyze(
         )
 
 
+@arena_app.command("evidence")
+def evidence(suite: Suite = "dev") -> None:
+    """How well each evidence source separates correct from wrong patches (AUC)."""
+    table = Table(title=f"suite {suite!r}: signal per evidence source (0.5 = coin flip)")
+    for column in ("Source", "AUC", "Correct patches", "Wrong patches"):
+        table.add_column(column)
+    for signal in _workflow(suite).evidence_signal():
+        table.add_row(signal.source, f"{signal.auc:.2f}", str(signal.correct), str(signal.wrong))
+    out.print(table)
+
+
 @arena_app.command("results")
 def results(
     sections: Annotated[

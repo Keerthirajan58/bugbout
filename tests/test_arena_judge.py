@@ -143,3 +143,23 @@ def test_an_unknown_exhibit_kind_fails_loudly_instead_of_being_ignored() -> None
     data["kinds"] = {GEMINI: "blind"}
     with pytest.raises(ValueError, match="unknown exhibit kind"):
         Matrix.from_dict(data)
+
+
+def test_evidence_signal_scores_each_author_without_its_own_patch() -> None:
+    from verdict.arena.analysis import evidence_signal
+    from verdict.arena.truth import Resolution
+
+    repro = "tests.test_verdict__gemini::test_bug"
+    outcomes = {
+        BASE: {repro: F},
+        CLAUDE: {repro: P},  # correct, and passes the reproduction
+        CODEX: {repro: F},  # wrong, and fails it: perfect separation
+    }
+    matrix = _matrix(outcomes, _exhibits())
+    resolutions = [
+        Resolution("t", CLAUDE, True, True, 1, 1, (), 1),
+        Resolution("t", CODEX, True, False, 0, 1, (), 1),
+    ]
+    by_source = {s.source: s for s in evidence_signal({"t": matrix}, resolutions)}
+    assert by_source[GEMINI].auc == 1.0
+    assert (by_source[GEMINI].correct, by_source[GEMINI].wrong) == (1, 1)

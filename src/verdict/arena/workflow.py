@@ -258,6 +258,10 @@ class ArenaWorkflow:
         resolutions = self.store.resolutions()
         return [analysis.evaluate(p, task_ids, matrices, resolutions, entrants) for p in policies]
 
+    def evidence_signal(self) -> list[analysis.SourceSignal]:
+        """How well each source of evidence separates correct from wrong patches."""
+        return analysis.evidence_signal(self.store.matrices(), self.store.resolutions())
+
     def scoreboard(self, policy: str = "v1") -> scoreboard.Scoreboard:
         matrices = self.store.matrices()
         return scoreboard.build(
