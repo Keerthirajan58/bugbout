@@ -412,6 +412,13 @@ def arena_cross(
             verdict = judge(Matrix.from_dict(m))
             out.print(f"  dry run: {verdict.chosen or 'abstain'} - {verdict.reason}")
         return
+    if only:
+        # A partial run replaces just its own tasks in the saved set.
+        try:
+            kept = [m for m in load_matrices() if m["task_id"] not in {t.task_id for t in tasks}]
+        except ArtifactError:
+            kept = []
+        matrices = kept + matrices
     path = save_matrices(matrices)
     out.print(f"\n[bold]{len(matrices)}[/bold] matrices  ->  {path}")
 

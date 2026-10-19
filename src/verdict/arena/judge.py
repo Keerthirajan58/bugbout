@@ -24,6 +24,7 @@ the smaller change.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -63,7 +64,13 @@ class Verdict:
         return asdict(self)
 
 
-def judge(matrix: Matrix) -> Verdict:
+def judge(matrix: Matrix, evidence: Callable[[str], bool] | None = None) -> Verdict:
+    """Judge one task. ``evidence`` optionally limits which exhibit authors count.
+
+    The filter exists for analysis - measuring which *kind* of evidence carries
+    the signal - and leaves the rules themselves untouched. Tests by an excluded
+    author are ignored entirely, never mistaken for the repository's own.
+    """
     base = matrix.outcomes.get(BASE, {})
     candidates = [t for t in matrix.trees if t != BASE and matrix.outcomes.get(t)]
     if not base:
@@ -77,6 +84,8 @@ def judge(matrix: Matrix) -> Verdict:
     suite: set[str] = set()
     for test, outcome in base.items():
         author = matrix.author_of(test)
+        if author is not None and evidence is not None and not evidence(author):
+            continue
         if author is None:
             if outcome == "passed":
                 suite.add(test)
@@ -85,7 +94,8 @@ def judge(matrix: Matrix) -> Verdict:
         elif outcome == "passed":
             preserved.setdefault(author, set()).add(test)
     valid = tuple(sorted(reproductions))
-    invalid = tuple(sorted(set(matrix.exhibits) - set(reproductions)))
+    counted = {a for a in matrix.exhibits if evidence is None or evidence(a)}
+    invalid = tuple(sorted(counted - set(reproductions)))
 
     def passes(tree: str, test: str) -> bool:
         return matrix.outcomes[tree].get(test) == "passed"

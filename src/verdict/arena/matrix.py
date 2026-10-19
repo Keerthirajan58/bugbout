@@ -168,7 +168,22 @@ class CrossExaminer:
             junit = tree.with_name(f"{tree.name}.junit.xml")
             junit.unlink(missing_ok=True)
             outcome, tail = self.bench.run_tests(
-                tree, [test_root, "-p", "no:xdist"], timeout=SUITE_TIMEOUT, junit=junit
+                tree,
+                # One exhibit that fails to import must not abort the session:
+                # pytest's default is to stop at a collection error, which on
+                # two tasks reduced a 1,300-test matrix to a handful of cells.
+                # Nose-era suites name files `*_tests.py`, which pytest's default
+                # discovery skips; arrow's 2019 history is one of them.
+                [
+                    test_root,
+                    "-p",
+                    "no:xdist",
+                    "--continue-on-collection-errors",
+                    "-o",
+                    "python_files=test_*.py *_test.py *_tests.py",
+                ],
+                timeout=SUITE_TIMEOUT,
+                junit=junit,
             )
             if outcome == "timeout":
                 note = tail
