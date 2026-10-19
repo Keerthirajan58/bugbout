@@ -31,6 +31,7 @@ _CREDENTIAL_HELP = {
         "Public repositories, read-only. Raises the API limit from 60/hr to 5000/hr."
     ),
     "database_url": "https://neon.tech -> create a free project -> copy the pooled connection string",
+    "mistral_api_key": "https://console.mistral.ai -> Experiment (free) plan -> API Keys -> Create",
 }
 
 
@@ -49,6 +50,7 @@ class Settings(BaseSettings):
     groq_api_key: SecretStr | None = None
     github_token: SecretStr | None = None
     database_url: SecretStr | None = None
+    mistral_api_key: SecretStr | None = None
 
     # --- agent models --------------------------------------------------------
     # Gemini is primary for its 1500 req/day free tier; Groq absorbs overflow

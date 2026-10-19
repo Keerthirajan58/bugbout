@@ -89,10 +89,9 @@ ignore = [
 # shell=False throughout. The executables are resolved from PATH deliberately:
 # the point is to use the same toolchain the developer has.
 "src/verdict/review/bench.py" = ["S603", "S607"]
-# The arena drives coding-agent CLIs as subprocesses - that is its job. argv is
-# built from literals and paths the arena created; shell=False throughout. The
-# adapter hooks share one signature, so not every adapter uses every argument.
-"src/verdict/arena/contestants.py" = ["S603", "ARG002"]
+# Agent adapters implement one hook signature, so not every adapter uses every
+# argument it is given.
+"src/verdict/arena/agents/*.py" = ["ARG002"]
 "tests/*" = ["ARG", "S101", "S105", "S106", "S603", "S607"]  # unused fixtures, bare asserts, fake credentials and git fixtures are the pytest idiom
 
 [tool.mypy]

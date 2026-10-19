@@ -189,8 +189,13 @@ class GitHubText:
     an unauthenticated caller gets 60 requests an hour.
     """
 
-    def __init__(self, token: str | None, cache_dir: Path) -> None:
-        self.token = token
+    def __init__(self, tokens: str | list[str | None] | None, cache_dir: Path) -> None:
+        """``tokens`` are tried in order; ``None`` means anonymous (60 requests an hour).
+
+        A token GitHub rejects - expired or revoked - is dropped for the rest of
+        the run instead of failing every fetch with the same 401.
+        """
+        self.tokens = tokens if isinstance(tokens, list) else [tokens]
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -200,20 +205,32 @@ class GitHubText:
             hit: dict[str, Any] = json.loads(cached.read_text(encoding="utf-8"))
             return hit
 
-        request = urllib.request.Request(
-            f"https://api.github.com/repos/{full_name}/issues/{number}",
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "verdict",
-                **({"Authorization": f"Bearer {self.token}"} if self.token else {}),
-            },
-        )
-        try:
-            # The URL is built from a literal https prefix, not from input.
-            with urllib.request.urlopen(request, timeout=30) as response:
-                payload: dict[str, Any] = json.load(response)
-        except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError) as exc:
-            log.warning("GitHub fetch failed for %s#%s: %s", full_name, number, exc)
+        while self.tokens:
+            token = self.tokens[0]
+            request = urllib.request.Request(
+                f"https://api.github.com/repos/{full_name}/issues/{number}",
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "verdict",
+                    **({"Authorization": f"Bearer {token}"} if token else {}),
+                },
+            )
+            try:
+                # The URL is built from a literal https prefix, not from input.
+                with urllib.request.urlopen(request, timeout=30) as response:
+                    payload: dict[str, Any] = json.load(response)
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code == 401 and token is not None:
+                    log.warning("GitHub rejected a token (401); trying the next credential")
+                    self.tokens.pop(0)
+                    continue
+                log.warning("GitHub fetch failed for %s#%s: %s", full_name, number, exc)
+                return None
+            except (urllib.error.URLError, TimeoutError) as exc:
+                log.warning("GitHub fetch failed for %s#%s: %s", full_name, number, exc)
+                return None
+        else:
             return None
         cached.write_text(json.dumps(payload), encoding="utf-8")
         return payload

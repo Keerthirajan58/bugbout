@@ -1,9 +1,13 @@
-"""The arena's artifacts, one file per stage.
+"""The arena's artifacts, one suite at a time, one file per stage.
 
-Stages stay separate because their costs differ by orders of magnitude. An
-oracle takes seconds to rebuild; a contestant's patch took a coding agent
-minutes of quota and cannot be regenerated identically. Re-scoring or re-judging
-must never require re-running a contestant.
+A **suite** is a set of tasks with its own artifacts: ``dev`` is where the
+system is designed and tuned; ``test`` is held out until the design is frozen,
+and is the only place a headline number may come from.
+
+Stages stay in separate files because their costs differ by orders of
+magnitude. An oracle takes seconds to rebuild; a contestant's patch took a
+coding agent minutes of quota and cannot be regenerated identically. Re-scoring
+or re-judging never requires re-running an agent.
 """
 
 from __future__ import annotations
@@ -11,107 +15,104 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from verdict.arena.examiners.exhibit import Exhibit
+from verdict.arena.matrix import Matrix
+from verdict.arena.race import Attempt
 from verdict.arena.truth import Oracle, Resolution
 from verdict.artifacts import payload_of, read_artifact, write_artifact
 from verdict.paths import artifacts_dir
-
-KIND_ORACLES = "arena_oracles"
-KIND_ENTRIES = "arena_entries"
-KIND_RESOLUTIONS = "arena_resolutions"
+from verdict.review.tasks import IssueTask
 
 
-def arena_dir() -> Path:
-    return artifacts_dir() / "arena"
+class ArenaStore:
+    def __init__(self, suite: str, root: Path | None = None) -> None:
+        self.suite = suite
+        self.root = (root or artifacts_dir() / "arena") / suite
+
+    # --- generic -----------------------------------------------------------------
+
+    def path(self, name: str) -> Path:
+        return self.root / f"{name}.json"
+
+    def exists(self, name: str) -> bool:
+        return self.path(name).exists()
+
+    def save(self, name: str, payload: dict[str, Any], *, freeze: bool = False) -> Path:
+        path = self.path(name)
+        write_artifact(path, kind=_kind(name), payload=payload, freeze=freeze)
+        return path
+
+    def load(self, name: str) -> dict[str, Any]:
+        return payload_of(read_artifact(self.path(name), expect_kind=_kind(name)))
+
+    # --- tasks and ground truth ---------------------------------------------------
+
+    def save_tasks(self, tasks: list[IssueTask], mining: dict[str, Any]) -> Path:
+        return self.save("tasks", {"mining": mining, "tasks": [t.to_dict() for t in tasks]})
+
+    def tasks(self) -> list[IssueTask]:
+        return [IssueTask.from_dict(t) for t in self.load("tasks")["tasks"]]
+
+    def save_oracles(self, oracles: list[Oracle]) -> Path:
+        return self.save("oracles", {"oracles": [o.to_dict() for o in oracles]})
+
+    def oracles(self) -> dict[str, Oracle]:
+        return {o["task_id"]: Oracle.from_dict(o) for o in self.load("oracles")["oracles"]}
+
+    def scorable_tasks(self) -> list[IssueTask]:
+        """Tasks whose oracle proves something: the denominator of every number."""
+        valid = {tid for tid, oracle in self.oracles().items() if oracle.valid}
+        return [t for t in self.tasks() if t.task_id in valid]
+
+    # --- contestants ----------------------------------------------------------------
+
+    def save_entries(self, entrant: str, attempts: list[Attempt], meta: dict[str, Any]) -> Path:
+        return self.save(
+            f"entries/{entrant.replace('/', '__')}",
+            {"entrant": entrant, "meta": meta, "attempts": [a.to_dict() for a in attempts]},
+        )
+
+    def entrants(self) -> list[str]:
+        folder = self.root / "entries"
+        if not folder.exists():
+            return []
+        return sorted(p.stem.replace("__", "/") for p in folder.glob("*.json"))
+
+    def entries(self, entrant: str) -> tuple[list[Attempt], dict[str, Any]]:
+        payload = self.load(f"entries/{entrant.replace('/', '__')}")
+        return [Attempt.from_dict(a) for a in payload["attempts"]], payload.get("meta", {})
+
+    def save_resolutions(self, resolutions: list[Resolution]) -> Path:
+        return self.save("resolutions", {"resolutions": [r.to_dict() for r in resolutions]})
+
+    def resolutions(self) -> list[Resolution]:
+        return [Resolution.from_dict(r) for r in self.load("resolutions")["resolutions"]]
+
+    # --- evidence and verdicts -------------------------------------------------------
+
+    def save_exhibits(self, exhibits: list[Exhibit], examiners: dict[str, Any]) -> Path:
+        return self.save(
+            "exhibits", {"examiners": examiners, "exhibits": [e.to_dict() for e in exhibits]}
+        )
+
+    def exhibits(self) -> tuple[list[Exhibit], dict[str, Any]]:
+        payload = self.load("exhibits")
+        return [Exhibit.from_dict(e) for e in payload["exhibits"]], payload.get("examiners", {})
+
+    def save_matrices(self, matrices: list[Matrix]) -> Path:
+        return self.save("matrices", {"matrices": [m.to_dict() for m in matrices]})
+
+    def matrices(self) -> dict[str, Matrix]:
+        return {m["task_id"]: Matrix.from_dict(m) for m in self.load("matrices")["matrices"]}
+
+    def save_verdicts(self, policy: str, verdicts: list[dict[str, Any]]) -> Path:
+        return self.save(f"verdicts/{policy}", {"policy": policy, "verdicts": verdicts})
+
+    def verdicts(self, policy: str) -> list[dict[str, Any]]:
+        verdicts: list[dict[str, Any]] = self.load(f"verdicts/{policy}")["verdicts"]
+        return verdicts
 
 
-def save_oracles(oracles: list[Oracle]) -> tuple[Path, str]:
-    path = arena_dir() / "oracles.json"
-    return path, write_artifact(
-        path, kind=KIND_ORACLES, payload={"oracles": [o.to_dict() for o in oracles]}
-    )
-
-
-def load_oracles() -> dict[str, Oracle]:
-    payload = payload_of(read_artifact(arena_dir() / "oracles.json", expect_kind=KIND_ORACLES))
-    return {o["task_id"]: Oracle.from_dict(o) for o in payload["oracles"]}
-
-
-def entries_path(entrant: str) -> Path:
-    return arena_dir() / "entries" / f"{entrant.replace('/', '__')}.json"
-
-
-def save_entries(entrant: str, entries: list[dict[str, Any]], meta: dict[str, Any]) -> Path:
-    """Every patch one entrant produced, with how it was produced."""
-    path = entries_path(entrant)
-    write_artifact(
-        path, kind=KIND_ENTRIES, payload={"entrant": entrant, "meta": meta, "entries": entries}
-    )
-    return path
-
-
-def load_entries(entrant: str) -> dict[str, Any]:
-    return payload_of(read_artifact(entries_path(entrant), expect_kind=KIND_ENTRIES))
-
-
-def list_entrants() -> list[str]:
-    folder = arena_dir() / "entries"
-    return (
-        sorted(p.stem.replace("__", "/") for p in folder.glob("*.json")) if folder.exists() else []
-    )
-
-
-def save_resolutions(resolutions: list[Resolution]) -> tuple[Path, str]:
-    path = arena_dir() / "resolutions.json"
-    return path, write_artifact(
-        path,
-        kind=KIND_RESOLUTIONS,
-        payload={"resolutions": [r.to_dict() for r in resolutions]},
-    )
-
-
-def load_resolutions() -> list[Resolution]:
-    payload = payload_of(
-        read_artifact(arena_dir() / "resolutions.json", expect_kind=KIND_RESOLUTIONS)
-    )
-    return [Resolution.from_dict(r) for r in payload["resolutions"]]
-
-
-KIND_EXHIBITS = "arena_exhibits"
-KIND_MATRICES = "arena_matrices"
-KIND_VERDICTS = "arena_verdicts"
-
-
-def save_exhibits(exhibits: list[dict[str, Any]], examiners: dict[str, Any]) -> Path:
-    path = arena_dir() / "exhibits.json"
-    write_artifact(path, kind=KIND_EXHIBITS, payload={"examiners": examiners, "exhibits": exhibits})
-    return path
-
-
-def load_exhibits() -> list[dict[str, Any]]:
-    payload = payload_of(read_artifact(arena_dir() / "exhibits.json", expect_kind=KIND_EXHIBITS))
-    exhibits: list[dict[str, Any]] = payload["exhibits"]
-    return exhibits
-
-
-def save_matrices(matrices: list[dict[str, Any]]) -> Path:
-    path = arena_dir() / "matrices.json"
-    write_artifact(path, kind=KIND_MATRICES, payload={"matrices": matrices})
-    return path
-
-
-def load_matrices() -> list[dict[str, Any]]:
-    payload = payload_of(read_artifact(arena_dir() / "matrices.json", expect_kind=KIND_MATRICES))
-    matrices: list[dict[str, Any]] = payload["matrices"]
-    return matrices
-
-
-def save_verdicts(verdicts: list[dict[str, Any]]) -> Path:
-    path = arena_dir() / "verdicts.json"
-    write_artifact(path, kind=KIND_VERDICTS, payload={"verdicts": verdicts})
-    return path
-
-
-def load_verdicts() -> list[dict[str, Any]]:
-    payload = payload_of(read_artifact(arena_dir() / "verdicts.json", expect_kind=KIND_VERDICTS))
-    verdicts: list[dict[str, Any]] = payload["verdicts"]
-    return verdicts
+def _kind(name: str) -> str:
+    """``entries/claude-code`` -> ``arena_entries``: one artifact kind per stage."""
+    return f"arena_{name.split('/', 1)[0]}"

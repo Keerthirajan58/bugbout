@@ -404,7 +404,7 @@ class TaskBench:
         self.materialise(task, force=True)
         work, clean = self.workdir(task), self.pristine(task)
         wanted = set(diff.changed_files)
-        for relative, hunks in _parse_patch(diff.patch, str(clean)).items():
+        for relative, hunks in parse_patch(diff.patch, str(clean)).items():
             # Only the files the record names. A test run leaves artefacts
             # behind - .hypothesis, coverage data - and those are noise, not
             # part of what the agent decided to change.
@@ -417,7 +417,7 @@ class TaskBench:
                 else []
             )
             (work / relative).parent.mkdir(parents=True, exist_ok=True)
-            (work / relative).write_text("".join(_apply_hunks(source, hunks)), encoding="utf-8")
+            (work / relative).write_text("".join(apply_hunks(source, hunks)), encoding="utf-8")
 
         _, changed, _ = self.diff_of(task)
         if set(changed) != set(diff.changed_files):
@@ -460,7 +460,7 @@ class TaskBench:
 Hunk = tuple[int, int, list[str]]
 
 
-def _parse_patch(patch: str, pristine_prefix: str) -> dict[str, list[Hunk]]:
+def parse_patch(patch: str, pristine_prefix: str) -> dict[str, list[Hunk]]:
     """Group a ``diff -ruN`` patch into hunks per file, keyed by relative path."""
     files: dict[str, list[Hunk]] = {}
     relative: str | None = None
@@ -496,7 +496,7 @@ def _parse_patch(patch: str, pristine_prefix: str) -> dict[str, list[Hunk]]:
     return files
 
 
-def _apply_hunks(source: list[str], hunks: list[Hunk]) -> list[str]:
+def apply_hunks(source: list[str], hunks: list[Hunk]) -> list[str]:
     """Rebuild a file from its original lines and the hunks that changed it."""
     result: list[str] = []
     cursor = 0  # 0-indexed position in `source`

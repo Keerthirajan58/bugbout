@@ -110,6 +110,21 @@ class Resolution:
         return asdict(self)
 
     @classmethod
+    def unproduced(cls, task_id: str, entrant: str, oracle: Oracle) -> Resolution:
+        """An attempt that left no fix behind: unresolved, by definition."""
+        return cls(
+            task_id,
+            entrant,
+            True,
+            False,
+            0,
+            len(oracle.fail_to_pass),
+            (),
+            len(oracle.pass_to_pass),
+            "no fix produced",
+        )
+
+    @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Resolution:
         payload = {k: v for k, v in data.items() if k in set(cls.__slots__)}
         payload["pass_to_pass_failed"] = tuple(payload["pass_to_pass_failed"])

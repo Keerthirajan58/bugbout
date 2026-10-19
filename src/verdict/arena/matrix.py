@@ -1,21 +1,18 @@
-"""Cross-examination: every exhibit, run against every candidate patch.
+"""Cross-examination: every exhibit, run against every candidate fix.
 
 For one task the matrix has a row per tree - the untouched base, and each
-contestant's fix applied to it - and a column per test. The tests are of three
-kinds, and the judge treats each differently:
+contestant's fix applied to it - and a column per test. Three kinds of test
+share it, and the judge treats each differently:
 
-* **Exhibits from contestants.** Each contestant was asked to write its own
-  regression test. Here it is run against everyone *else's* fix as well.
-* **Exhibits from blind examiners.** Written from the issue alone, never
-  having seen a patch.
-* **The repository's existing suite**, so a patch that breaks something it
-  should not is visible without anyone having to predict it.
+* **Contestants' own tests** (``self``), each run against everyone else's fix.
+* **Blind examiners' tests** (``blind``), written without seeing any patch.
+* **The repository's existing suite**, so a fix that breaks something it should
+  not is visible without anyone having to predict it.
 
 Only the fix part of a patch is applied - never a contestant's edits to the
-test suite - and every exhibit is installed under its own file name, so no
-author's tests can shadow another's.
-
-Nothing here consults a model. The matrix is execution, start to finish.
+suite - and every exhibit is installed under its own module name, so no
+author's tests can shadow another's. Nothing here consults a model: the matrix
+is execution, start to finish.
 """
 
 from __future__ import annotations
@@ -27,10 +24,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
-from verdict.arena.contestants import REGRESSION_TEST
-from verdict.arena.examiners import Exhibit
+from verdict.arena.assignments import REGRESSION_TEST
+from verdict.arena.examiners.exhibit import Exhibit, Kind
 from verdict.arena.patch import Patch, PatchError
 from verdict.arena.truth import read_junit
+from verdict.arena.vendors import vendor_of
 from verdict.review.bench import TaskBench
 from verdict.review.tasks import IssueTask
 
@@ -38,38 +36,46 @@ BASE = "base"
 EXHIBIT_PREFIX = "test_verdict__"
 SUITE_TIMEOUT = 900
 
+_PYTEST_ARGS = (
+    "-p",
+    "no:xdist",
+    # One exhibit that fails to import must not abort the session: pytest's
+    # default is to stop at a collection error, which on two tasks reduced a
+    # 1,300-test matrix to a handful of cells.
+    "--continue-on-collection-errors",
+    # Nose-era suites name files `*_tests.py`, which pytest's default discovery
+    # skips; arrow's 2019 history is one of them.
+    "-o",
+    "python_files=test_*.py *_test.py *_tests.py",
+)
 
-def family_of(author: str) -> str:
-    """The vendor behind an entrant or examiner. No vendor grades its own models."""
-    name = author.lower()
-    if "claude" in name:
-        return "anthropic"
-    if "gemini" in name or "gemma" in name:
-        return "google"
-    if "qwen" in name:
-        return "alibaba"
-    if "gpt" in name or "codex" in name or "openai" in name:
-        return "openai"
-    return name.split("/")[0]
-
-
-def slug(author: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", author.lower()).strip("_")
+_CODE = {"passed": "P", "failed": "F", "error": "E", "skipped": "S", "absent": "-"}
+_OUTCOME = {v: k for k, v in _CODE.items()}
 
 
-def self_exhibits(task: IssueTask, entries: dict[str, Patch], test_root: str) -> list[Exhibit]:
+def module_name(author: str) -> str:
+    return EXHIBIT_PREFIX + re.sub(r"[^a-z0-9]+", "_", author.lower()).strip("_")
+
+
+def self_exhibits(task: IssueTask, patches: dict[str, Patch], test_root: str) -> list[Exhibit]:
     """Each contestant's own regression test, as an exhibit against the others."""
     exhibits = []
-    for author, patch in sorted(entries.items()):
+    for author, patch in sorted(patches.items()):
         created = patch.only(under=test_root, keep=True).created()
-        code = created.get(f"{test_root}/{REGRESSION_TEST}")
-        if code is None and created:
-            # It wrote its test somewhere else under the test root; take the
-            # first new test module rather than lose the evidence.
-            code = next((c for p, c in sorted(created.items()) if "test" in Path(p).name), None)
+        code = created.get(f"{test_root}/{REGRESSION_TEST}") or next(
+            (c for p, c in sorted(created.items()) if "test" in Path(p).name), ""
+        )
         if code:
-            exhibits.append(Exhibit(task.task_id, author, family_of(author), code, model=author))
+            exhibits.append(
+                Exhibit(task.task_id, author, vendor_of(author), "self", code, model=author)
+            )
     return exhibits
+
+
+def fixes_only(patches: dict[str, Patch], test_root: str) -> dict[str, Patch]:
+    """The part of each entrant's patch that is a fix, dropping empty ones."""
+    fixes = {a: p.only(under=test_root, keep=False) for a, p in patches.items()}
+    return {a: p for a, p in fixes.items() if not p.empty}
 
 
 @dataclass
@@ -79,13 +85,20 @@ class Matrix:
     task_id: str
     trees: list[str]
     exhibits: dict[str, str]
-    """author -> the test module name its exhibit was installed as."""
+    """author -> the module its exhibit was installed as."""
+
+    kinds: dict[str, Kind] = field(default_factory=dict)
+    """author -> ``blind`` or ``self``."""
 
     outcomes: dict[str, dict[str, str]] = field(default_factory=dict)
     """tree -> test id -> passed / failed / error / skipped."""
 
     lines_changed: dict[str, int] = field(default_factory=dict)
     notes: dict[str, str] = field(default_factory=dict)
+
+    @property
+    def candidates(self) -> list[str]:
+        return [t for t in self.trees if t != BASE and self.outcomes.get(t)]
 
     def author_of(self, test_id: str) -> str | None:
         """Which exhibit a test belongs to; ``None`` for the repository's own tests."""
@@ -95,11 +108,14 @@ class Matrix:
                 return author
         return None
 
+    def passes(self, tree: str, test_id: str) -> bool:
+        return self.outcomes.get(tree, {}).get(test_id) == "passed"
+
     def to_dict(self) -> dict[str, Any]:
         """Compact form: one table of test ids, one outcome string per tree.
 
-        A task's matrix is ~1,500 tests across five trees. As nested JSON that
-        is megabytes per task; as a shared column header plus a character per
+        A task's matrix is ~1,500 tests across several trees. As nested JSON
+        that is megabytes per task; as a shared header plus one character per
         cell it is small enough to commit as evidence.
         """
         tests = sorted({t for row in self.outcomes.values() for t in row})
@@ -114,22 +130,18 @@ class Matrix:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Matrix:
         tests: list[str] = data["tests"]
-        outcomes = {
-            tree: {t: _OUTCOME[c] for t, c in zip(tests, row, strict=True) if c != "-"}
-            for tree, row in data["rows"].items()
-        }
         return cls(
             task_id=data["task_id"],
             trees=list(data["trees"]),
             exhibits=dict(data["exhibits"]),
-            outcomes=outcomes,
+            kinds=dict(data.get("kinds", {})),
+            outcomes={
+                tree: {t: _OUTCOME[c] for t, c in zip(tests, row, strict=True) if c != "-"}
+                for tree, row in data["rows"].items()
+            },
             lines_changed=dict(data.get("lines_changed", {})),
             notes=dict(data.get("notes", {})),
         )
-
-
-_CODE = {"passed": "P", "failed": "F", "error": "E", "skipped": "S", "absent": "-"}
-_OUTCOME = {v: k for k, v in _CODE.items()}
 
 
 class CrossExaminer:
@@ -141,68 +153,46 @@ class CrossExaminer:
         self.workers = workers
 
     def build(self, task: IssueTask, fixes: dict[str, Patch], exhibits: list[Exhibit]) -> Matrix:
-        test_root = self.bench.target.test_root
-        installed = {e.author: f"{EXHIBIT_PREFIX}{slug(e.author)}" for e in exhibits if e.test_code}
+        usable = [e for e in exhibits if e.usable]
         matrix = Matrix(
-            task.task_id,
-            [BASE, *sorted(fixes)],
-            installed,
+            task_id=task.task_id,
+            trees=[BASE, *sorted(fixes)],
+            exhibits={e.author: module_name(e.author) for e in usable},
+            kinds={e.author: e.kind for e in usable},
             lines_changed={a: p.lines_changed() for a, p in fixes.items()},
         )
+        with ThreadPoolExecutor(max_workers=self.workers) as pool:
+            runs = pool.map(
+                lambda tree: self._run(task, tree, fixes.get(tree), usable), matrix.trees
+            )
+            for tree, results, note in runs:
+                matrix.outcomes[tree] = results
+                if note:
+                    matrix.notes[tree] = note
+        return matrix
 
-        def run(tree_name: str) -> tuple[str, dict[str, str], str]:
-            tree = self.scratch / task.task_id / f"matrix-{slug(tree_name)}"
-            shutil.rmtree(tree, ignore_errors=True)
-            self.bench.archive(task.base_commit, tree)
-            note = ""
-            if tree_name != BASE:
+    def _run(
+        self, task: IssueTask, tree_name: str, fix: Patch | None, exhibits: list[Exhibit]
+    ) -> tuple[str, dict[str, str], str]:
+        """One tree: the base, plus a fix if given, plus every exhibit; then the suite."""
+        test_root = self.bench.target.test_root
+        tree = self.scratch / task.task_id / f"matrix-{module_name(tree_name)}"
+        shutil.rmtree(tree, ignore_errors=True)
+        self.bench.archive(task.base_commit, tree)
+        try:
+            if fix is not None:
                 try:
-                    fixes[tree_name].apply(tree)
+                    fix.apply(tree)
                 except PatchError as exc:
-                    shutil.rmtree(tree, ignore_errors=True)
                     return tree_name, {}, f"fix did not apply: {exc}"
             for exhibit in exhibits:
-                if exhibit.test_code:
-                    path = tree / test_root / f"{installed[exhibit.author]}.py"
-                    path.write_text(exhibit.test_code, encoding="utf-8")
+                path = tree / test_root / f"{module_name(exhibit.author)}.py"
+                path.write_text(exhibit.test_code, encoding="utf-8")
             junit = tree.with_name(f"{tree.name}.junit.xml")
             junit.unlink(missing_ok=True)
             outcome, tail = self.bench.run_tests(
-                tree,
-                # One exhibit that fails to import must not abort the session:
-                # pytest's default is to stop at a collection error, which on
-                # two tasks reduced a 1,300-test matrix to a handful of cells.
-                # Nose-era suites name files `*_tests.py`, which pytest's default
-                # discovery skips; arrow's 2019 history is one of them.
-                [
-                    test_root,
-                    "-p",
-                    "no:xdist",
-                    "--continue-on-collection-errors",
-                    "-o",
-                    "python_files=test_*.py *_test.py *_tests.py",
-                ],
-                timeout=SUITE_TIMEOUT,
-                junit=junit,
+                tree, [test_root, *_PYTEST_ARGS], timeout=SUITE_TIMEOUT, junit=junit
             )
-            if outcome == "timeout":
-                note = tail
-            results = read_junit(junit)
+            return tree_name, read_junit(junit), tail if outcome == "timeout" else ""
+        finally:
             shutil.rmtree(tree, ignore_errors=True)
-            return tree_name, results, note
-
-        with ThreadPoolExecutor(max_workers=self.workers) as pool:
-            for name, results, note in pool.map(run, matrix.trees):
-                matrix.outcomes[name] = results
-                if note:
-                    matrix.notes[name] = note
-        return matrix
-
-
-def fixes_only(entries: dict[str, Patch], test_root: str) -> dict[str, Patch]:
-    """The part of each entrant's patch that is a fix, dropping empty ones."""
-    fixes = {a: p.only(under=test_root, keep=False) for a, p in entries.items()}
-    return {a: p for a, p in fixes.items() if not p.empty}
-
-
-__all__ = ["BASE", "CrossExaminer", "Matrix", "family_of", "fixes_only", "self_exhibits"]
