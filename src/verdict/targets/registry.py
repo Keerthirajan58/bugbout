@@ -244,8 +244,50 @@ ATTRS = TargetRepo(
     ),
 )
 
+# --- held-out targets ---------------------------------------------------------
+#
+# Added after the arena's design was diagnosed and tuned on the six targets
+# above. Their tasks form the `test` suite: no rule, threshold or prompt was
+# chosen while looking at them, which is what lets a number measured here stand
+# as a result rather than as a fit.
+
+SQLPARSE = TargetRepo(
+    slug="sqlparse",
+    owner="andialbrecht",
+    name="sqlparse",
+    ref="main@2026-08-13",
+    commit="60cdc649726bf1bc4f1b336050560b336da715ec",
+    spdx_license="BSD-3-Clause",
+    source_root="sqlparse",
+    test_root="tests",
+    test_dependencies=("pytest",),
+    selection_rationale=(
+        "Held out. A non-validating SQL parser whose bugs are precise and user-reported - "
+        "a mis-split statement, a wrongly grouped token - with fixes that almost always "
+        "ship a test and reference the issue: 24 replayable tasks since 2018."
+    ),
+)
+
+TOMLKIT = TargetRepo(
+    slug="tomlkit",
+    owner="python-poetry",
+    name="tomlkit",
+    ref="master@2026-10-16",
+    commit="eddd27e43a62fe58707c311bfad2f52e72493f53",
+    spdx_license="MIT",
+    source_root="tomlkit",
+    test_root="tests",
+    test_dependencies=("pytest", "pyyaml"),
+    selection_rationale=(
+        "Held out. A style-preserving TOML library, where a fix must keep every byte of "
+        "the user's formatting while changing behaviour - exactly the kind of change a "
+        "patch can get half right. 40+ replayable tasks since 2018."
+    ),
+)
+
+
 TARGETS: dict[str, TargetRepo] = {
-    t.slug: t for t in (MARSHMALLOW, ARROW, CLICK, JSONSCHEMA, LOGURU, ATTRS)
+    t.slug: t for t in (MARSHMALLOW, ARROW, CLICK, JSONSCHEMA, LOGURU, ATTRS, SQLPARSE, TOMLKIT)
 }
 
 

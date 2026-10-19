@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from verdict.arena.assignments import REGRESSION_TEST
-from verdict.arena.examiners.exhibit import Exhibit, Kind
+from verdict.arena.examiners.exhibit import KINDS, Exhibit, Kind
 from verdict.arena.patch import Patch, PatchError
 from verdict.arena.truth import read_junit
 from verdict.arena.vendors import vendor_of
@@ -111,6 +111,25 @@ class Matrix:
     def passes(self, tree: str, test_id: str) -> bool:
         return self.outcomes.get(tree, {}).get(test_id) == "passed"
 
+    def restricted(self, entrants: set[str]) -> Matrix:
+        """The same evidence, with only these entrants' fixes as candidates.
+
+        Used to ask how the judge would have done with a smaller field - for
+        instance the held-out suite's field - without re-running anything.
+        Their own exhibits stay: a contestant's test is evidence whether or not
+        its fix is still in the race.
+        """
+        trees = [t for t in self.trees if t == BASE or t in entrants]
+        return Matrix(
+            task_id=self.task_id,
+            trees=trees,
+            exhibits=self.exhibits,
+            kinds=self.kinds,
+            outcomes={t: o for t, o in self.outcomes.items() if t in trees},
+            lines_changed={t: n for t, n in self.lines_changed.items() if t in trees},
+            notes=self.notes,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         """Compact form: one table of test ids, one outcome string per tree.
 
@@ -130,11 +149,16 @@ class Matrix:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> Matrix:
         tests: list[str] = data["tests"]
+        kinds = dict(data.get("kinds", {}))
+        # An unknown kind would be silently excluded by every policy's evidence
+        # set - which once moved a pre-registered score without any error.
+        if unknown := {k for k in kinds.values() if k not in KINDS}:
+            raise ValueError(f"matrix {data['task_id']}: unknown exhibit kind(s) {unknown}")
         return cls(
             task_id=data["task_id"],
             trees=list(data["trees"]),
             exhibits=dict(data["exhibits"]),
-            kinds=dict(data.get("kinds", {})),
+            kinds=kinds,
             outcomes={
                 tree: {t: _OUTCOME[c] for t, c in zip(tests, row, strict=True) if c != "-"}
                 for tree, row in data["rows"].items()

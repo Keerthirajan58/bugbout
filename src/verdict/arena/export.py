@@ -170,7 +170,7 @@ def _evidence(
             {
                 "author": author,
                 "vendor": vendor_of(author),
-                "kind": matrix.kinds.get(author, "blind"),
+                "kind": matrix.kinds.get(author, "prompted"),
                 "code": code_of.get((task.task_id, author), ""),
                 "reproduces": author in valid,
                 "tests": [

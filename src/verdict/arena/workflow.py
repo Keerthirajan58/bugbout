@@ -19,7 +19,7 @@ from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import Any
 
-from verdict.arena import scoreboard
+from verdict.arena import analysis, scoreboard
 from verdict.arena.agents import CodingAgent, OllamaServer
 from verdict.arena.assignments import Fix
 from verdict.arena.examiners import Examiner, ExamRoom, Exhibit, SourceContext
@@ -248,6 +248,15 @@ class ArenaWorkflow:
         verdicts = [judge(matrices[t.task_id]) for t in self.tasks() if t.task_id in matrices]
         self.store.save_verdicts(policy, [v.to_dict() for v in verdicts])
         return verdicts
+
+    def analyze(
+        self, policies: list[str], entrants: set[str] | None = None
+    ) -> list[analysis.PolicyResult]:
+        """Every named policy, measured on this suite's saved matrices; nothing re-run."""
+        task_ids = [t.task_id for t in self.tasks()]
+        matrices = self.store.matrices()
+        resolutions = self.store.resolutions()
+        return [analysis.evaluate(p, task_ids, matrices, resolutions, entrants) for p in policies]
 
     def scoreboard(self, policy: str = "v1") -> scoreboard.Scoreboard:
         matrices = self.store.matrices()

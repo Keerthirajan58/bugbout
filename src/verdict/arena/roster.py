@@ -62,7 +62,10 @@ class Roster:
             "codex-reproducer": lambda: AgentExaminer(
                 CodexAgent("gpt-6.1-sol"), lane_slots={"chatgpt": 2}
             ),
-            "codestral-reproducer": lambda: AgentExaminer(self.contestant("codestral")),
+            # 125 requests a minute; one attempt uses ~40 a minute, so three fit.
+            "codestral-reproducer": lambda: AgentExaminer(
+                self.contestant("codestral"), lane_slots={"mistral": 3}
+            ),
         }
 
     @property

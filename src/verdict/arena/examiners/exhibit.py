@@ -5,8 +5,14 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Literal
 
-Kind = Literal["blind", "self"]
-"""``blind``: written without seeing any patch. ``self``: a contestant's own test."""
+Kind = Literal["agentic", "prompted", "self"]
+"""How an exhibit was written. ``agentic`` and ``prompted`` are both blind - the
+author never saw a patch - but an agentic author ran its test against the real
+code before submitting it, and a prompted one answered in a single call.
+``self`` is a contestant's own test for its own fix."""
+
+KINDS: frozenset[Kind] = frozenset({"agentic", "prompted", "self"})
+BLIND: frozenset[Kind] = frozenset({"agentic", "prompted"})
 
 
 @dataclass(frozen=True, slots=True)

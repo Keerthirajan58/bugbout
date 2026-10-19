@@ -61,7 +61,7 @@ class AgentExaminer(Examiner):
             task_id=task.task_id,
             author=self.author,
             vendor=self.vendor,
-            kind="blind",
+            kind="agentic",
             test_code=code,
             reasoning=attempt.record.summary[:2000],
             model=self.agent.name,

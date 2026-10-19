@@ -25,10 +25,10 @@ score is the pre-registered one and it is never changed.
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
-from typing import Any
+from typing import Any, Literal
 
+from verdict.arena.examiners.exhibit import BLIND, Kind
 from verdict.arena.matrix import BASE, Matrix
 from verdict.arena.vendors import vendor_of
 
@@ -45,14 +45,49 @@ class JudgePolicy:
     vendor's misreading, which is why v1 excludes it too.
     """
 
-    include: Callable[[str], bool] | None = None
-    """Analysis only: which exhibit authors count. Excluded authors' tests are
-    ignored entirely, never mistaken for the repository's own."""
+    evidence: frozenset[Kind] = frozenset({"agentic", "prompted", "self"})
+    """Which kinds of exhibit count. Tests of other kinds are ignored entirely,
+    never mistaken for the repository's own."""
 
+    tie_break: Literal["smaller_change", "most_evidence"] = "smaller_change"
+    """Among equally supported candidates: the smaller patch, or the one that
+    survived more independent reproductions."""
+
+
+_EXECUTED: frozenset[Kind] = frozenset({"agentic", "self"})
+"""Evidence whose author ran it against the real code before submitting it."""
 
 POLICIES: dict[str, JudgePolicy] = {
+    # Committed before any result existed; its dev score is the pre-registered one.
     "v1": JudgePolicy("v1"),
+    # --- candidates, declared before agentic evidence was judged -----------------
+    # One is frozen for the held-out suite by the procedure in SELECTION below.
+    "unanimous": JudgePolicy("unanimous", support_threshold=1.0, tie_break="most_evidence"),
+    "agentic": JudgePolicy("agentic", evidence=_EXECUTED),
+    "agentic-open": JudgePolicy(
+        "agentic-open", evidence=_EXECUTED, blind_vouches_for_all=True, tie_break="most_evidence"
+    ),
+    "agentic-open-unanimous": JudgePolicy(
+        "agentic-open-unanimous",
+        evidence=_EXECUTED,
+        blind_vouches_for_all=True,
+        support_threshold=1.0,
+        tie_break="most_evidence",
+    ),
+    "all-open-unanimous": JudgePolicy(
+        "all-open-unanimous",
+        blind_vouches_for_all=True,
+        support_threshold=1.0,
+        tie_break="most_evidence",
+    ),
 }
+
+SELECTION = """\
+How one candidate policy is frozen for the held-out suite (declared in advance):
+measured on the dev suite with the held-out suite's field of contestants
+(codex/gpt-6.1-sol and codex/gpt-5.6-luna only), keep the policies whose gate
+approves at least half of the correct patches, and freeze the one with the
+highest gate precision; ties go to the most resolved selections."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,6 +106,9 @@ class Standing:
 
     preserved_violations: int
     lines_changed: int
+    approved: bool = False
+    """Supported at or above the policy's threshold, and breaking nothing:
+    the patch this policy would let through a merge gate."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -142,12 +180,12 @@ class Judge:
             if author is None:
                 if outcome == "passed":
                     suite.add(test)
-            elif self._counts(author):
+            elif self._counts(matrix, author):
                 if outcome == "failed":
                     reproductions.setdefault(author, set()).add(test)
                 elif outcome == "passed":
                     preserved.setdefault(author, set()).add(test)
-        counted = {a for a in matrix.exhibits if self._counts(a)}
+        counted = {a for a in matrix.exhibits if self._counts(matrix, a)}
         return _Evidence(
             {a: frozenset(t) for a, t in reproductions.items()},
             {a: frozenset(t) for a, t in preserved.items()},
@@ -155,8 +193,8 @@ class Judge:
             tuple(sorted(counted - set(reproductions))),
         )
 
-    def _counts(self, author: str) -> bool:
-        return self.policy.include is None or self.policy.include(author)
+    def _counts(self, matrix: Matrix, author: str) -> bool:
+        return matrix.kinds.get(author, "prompted") in self.policy.evidence
 
     # --- rule 2 -------------------------------------------------------------------
 
@@ -166,7 +204,7 @@ class Judge:
             author
             for author in sorted(evidence.reproductions)
             if vendor_of(author) != own
-            or (self.policy.blind_vouches_for_all and matrix.kinds.get(author) == "blind")
+            or (self.policy.blind_vouches_for_all and matrix.kinds.get(author) in BLIND)
         )
 
     # --- rule 3 -------------------------------------------------------------------
@@ -202,25 +240,35 @@ class Judge:
             for t in evidence.preserved.get(a, ())
             if not matrix.passes(candidate, t) and self._quorum_keeps(matrix, t, candidate)
         )
+        support = round(sum(fractions) / len(fractions), 3) if fractions else None
+        breaks = self._breaks(matrix, evidence, candidate)
         return Standing(
             entrant=candidate,
-            support=round(sum(fractions) / len(fractions), 3) if fractions else None,
+            support=support,
             judges=judges,
             reproductions_passed=sum(
                 matrix.passes(candidate, t) for a in judges for t in evidence.reproductions[a]
             ),
             reproductions_total=sum(len(evidence.reproductions[a]) for a in judges),
-            breaks=self._breaks(matrix, evidence, candidate),
+            breaks=breaks,
             preserved_violations=violations,
             lines_changed=matrix.lines_changed.get(candidate, 0),
+            approved=(
+                not breaks and support is not None and support >= self.policy.support_threshold
+            ),
         )
 
     # --- rule 4 and the decision ----------------------------------------------------
 
+    def _tie_break(self, standing: Standing) -> int:
+        if self.policy.tie_break == "most_evidence":
+            return -standing.reproductions_total
+        return standing.lines_changed
+
     def _decide(self, standings: list[Standing]) -> tuple[str | None, str]:
         eligible = sorted(
             (s for s in standings if not s.breaks and s.support is not None),
-            key=lambda s: (-(s.support or 0.0), s.preserved_violations, s.lines_changed),
+            key=lambda s: (-(s.support or 0.0), s.preserved_violations, self._tie_break(s)),
         )
         if not eligible:
             if all(s.breaks for s in standings):

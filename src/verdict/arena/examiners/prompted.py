@@ -129,12 +129,14 @@ class PromptExaminer(Examiner):
                 task_id=task.task_id,
                 author=self.author,
                 vendor=self.vendor,
-                kind="blind",
+                kind="prompted",
                 test_code=code + "\n",
                 reasoning=str(payload.get("reasoning", "")),
                 model=provider.model,
             )
-        return Exhibit(task.task_id, self.author, self.vendor, "blind", "", error="; ".join(errors))
+        return Exhibit(
+            task.task_id, self.author, self.vendor, "prompted", "", error="; ".join(errors)
+        )
 
     def _ask(
         self, provider: Provider, request: LLMRequest, errors: list[str]

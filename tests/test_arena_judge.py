@@ -16,7 +16,7 @@ def _matrix(outcomes: dict[str, dict[str, str]], exhibits: dict[str, str]) -> Ma
         task_id="t",
         trees=trees,
         exhibits=exhibits,
-        kinds={a: "blind" if a.startswith("examiner/") else "self" for a in exhibits},
+        kinds={a: "prompted" if a.startswith("examiner/") else "self" for a in exhibits},
         outcomes=outcomes,
         lines_changed=dict.fromkeys(trees, 10),
     )
@@ -134,3 +134,12 @@ def test_a_blind_exhibit_may_vouch_for_its_own_vendor_only_when_the_policy_says_
     assert Judge()(_matrix(outcomes, exhibits)).chosen is None
     lenient = JudgePolicy("lenient", blind_vouches_for_all=True)
     assert Judge(lenient)(_matrix(outcomes, exhibits)).chosen == CODEX
+
+
+def test_an_unknown_exhibit_kind_fails_loudly_instead_of_being_ignored() -> None:
+    import pytest
+
+    data = _matrix({BASE: {"tests.a::t": P}}, _exhibits()).to_dict()
+    data["kinds"] = {GEMINI: "blind"}
+    with pytest.raises(ValueError, match="unknown exhibit kind"):
+        Matrix.from_dict(data)

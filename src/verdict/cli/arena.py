@@ -185,6 +185,58 @@ def report(suite: Suite = "dev", policy: Policy = "v1") -> None:
     out.print(table)
 
 
+@arena_app.command("analyze")
+def analyze(
+    suite: Suite = "dev",
+    policies: Annotated[
+        list[str] | None, typer.Option("--policy", help="Repeatable; default: every policy.")
+    ] = None,
+    entrants: Annotated[
+        list[str] | None,
+        typer.Option("--entrant", "-e", help="Restrict the field to these entrants; repeatable."),
+    ] = None,
+) -> None:
+    """Compare judge policies on a suite: selection per task, gating per patch."""
+    results = _workflow(suite).analyze(
+        policies or list(POLICIES), set(entrants) if entrants else None
+    )
+    field_ = ", ".join(entrants) if entrants else "every entrant"
+    table = Table(title=f"suite {suite!r}, field: {field_}")
+    for column in (
+        "Policy",
+        "Selection",
+        "Wrong picks",
+        "Abstained",
+        "Gate precision",
+        "Base rate",
+        "Catches",
+        "False alarms",
+        "Unverified",
+    ):
+        table.add_column(column)
+    for r in results:
+        g, b = r.gate, r.board
+        table.add_row(
+            r.policy,
+            f"{b.verdict_resolved}/{b.tasks}",
+            str(b.wrong_picks),
+            f"{b.verdict_abstained} ({b.abstained_correctly} right)",
+            f"{g.precision:.0%} ({g.approved_correct}/{g.approved_correct + g.approved_wrong})",
+            f"{g.base_rate:.0%}",
+            f"{g.rejected_wrong}/{g.wrong}",
+            f"{g.rejected_correct}/{g.correct}",
+            str(g.unverified_correct + g.unverified_wrong),
+        )
+    out.print(table)
+    if results:
+        board = results[0].board
+        best, count = board.best_single
+        out.print(
+            f"  best single agent: {best} {count}/{board.tasks}   best possible: "
+            f"{board.best_possible}/{board.tasks}   random: {board.random_pick:.1f}"
+        )
+
+
 @arena_app.command("export")
 def export(
     suite: Suite = "dev",
