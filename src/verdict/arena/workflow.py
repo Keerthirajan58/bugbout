@@ -202,10 +202,17 @@ class ArenaWorkflow:
 
     # --- evidence -----------------------------------------------------------------------
 
-    def examine(self, examiners: list[str], *, only: list[str] | None = None) -> list[Exhibit]:
+    def examine(
+        self, examiners: list[str], *, only: list[str] | None = None, retry_failed: bool = False
+    ) -> list[Exhibit]:
         """Blind exhibits from each examiner, merged into the saved set by (task, author)."""
         tasks = self.tasks(only)
-        room = ExamRoom(self.layout, self.suite, SourceContext(self.layout, self.patches()))
+        room = ExamRoom(
+            self.layout,
+            self.suite,
+            SourceContext(self.layout, self.patches()),
+            retry_failed=retry_failed,
+        )
         chosen: list[Examiner] = [self.roster.examiner(name) for name in examiners]
         fresh: list[Exhibit] = []
         with self._local_models(any(e.uses_local_models for e in chosen)):

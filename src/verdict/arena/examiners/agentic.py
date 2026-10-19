@@ -49,6 +49,7 @@ class AgentExaminer(Examiner):
             self.assignment,
             timeout=self.timeout,
             lane_slots=self.lane_slots,
+            retry_failed=room.retry_failed,
         )
         attempts = {a.task_id: a for a in race.run(tasks, [self.agent])}
         return [self._exhibit(task, attempts[task.task_id], room) for task in tasks]

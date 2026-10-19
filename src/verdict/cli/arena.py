@@ -136,9 +136,12 @@ def examine(
     ],
     suite: Suite = "dev",
     only: Only = None,
+    retry_failed: Annotated[
+        bool, typer.Option(help="Re-run attempts that failed without producing anything.")
+    ] = False,
 ) -> None:
     """Blind examiners write reproduction tests from each issue, never seeing a patch."""
-    exhibits = _workflow(suite).examine(examiners, only=only)
+    exhibits = _workflow(suite).examine(examiners, only=only, retry_failed=retry_failed)
     written = sum(e.usable for e in exhibits)
     for exhibit in exhibits:
         if not exhibit.usable:

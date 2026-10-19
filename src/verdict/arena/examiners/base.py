@@ -28,6 +28,9 @@ class ExamRoom:
     source_context: Callable[[IssueTask, int], str]
     """The base version of the code relevant to a task, within a character budget."""
 
+    retry_failed: bool = False
+    """Re-run journaled attempts that ended without producing anything."""
+
 
 class Examiner(ABC):
     author: str
