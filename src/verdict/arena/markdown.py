@@ -7,12 +7,22 @@ rewrites only that block, so prose and numbers can never drift apart.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 
-from verdict.arena.analysis import PolicyResult
+from verdict.arena.analysis import PolicyResult, SourceSignal
 
 BEGIN = "<!-- results:begin -->"
 END = "<!-- results:end -->"
+
+
+@dataclass(frozen=True, slots=True)
+class Section:
+    """One suite's results: the frozen policy's scores and the raw evidence signal."""
+
+    title: str
+    result: PolicyResult
+    signals: list[SourceSignal]
 
 
 def selection_table(result: PolicyResult) -> str:
@@ -59,21 +69,37 @@ def gate_table(result: PolicyResult) -> str:
     )
 
 
-def results_block(sections: list[tuple[str, PolicyResult]]) -> str:
+def signal_table(signals: list[SourceSignal]) -> str:
+    rows = ["| Evidence source | AUC | Correct / wrong patches scored |", "|---|---|---|"]
+    rows += [f"| {s.source} | {s.auc:.2f} | {s.correct} / {s.wrong} |" for s in signals]
+    return "\n".join(rows) + (
+        "\n\nAUC: the chance that a correct patch scores higher than a wrong one on that "
+        "source's tests - 0.5 is a coin flip. No author is scored on its own patch."
+    )
+
+
+def results_block(sections: list[Section]) -> str:
     parts = [BEGIN, ""]
-    for title, result in sections:
+    for section in sections:
         parts += [
-            f"### {title}",
-            "",
-            "**Choosing a patch** - several agents fixed the same issue; which one ships?",
-            "",
-            selection_table(result),
+            f"### {section.title}",
             "",
             "**Gating a patch** - an agent says it is done; may it merge?",
             "",
-            gate_table(result),
+            gate_table(section.result),
+            "",
+            "**Choosing a patch** - several agents fixed the same issue; which one ships?",
+            "",
+            selection_table(section.result),
             "",
         ]
+        if section.signals:
+            parts += [
+                "**How much each source of evidence can tell** - correct from wrong patches",
+                "",
+                signal_table(section.signals),
+                "",
+            ]
     return "\n".join([*parts, END])
 
 

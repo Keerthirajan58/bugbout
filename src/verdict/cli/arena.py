@@ -47,6 +47,8 @@ Only = Annotated[
 ]
 Policy = Annotated[str, typer.Option("--policy", help=f"Judge policy: {', '.join(POLICIES)}.")]
 
+SUITE_TITLE = {"test": "Held-out suite", "dev": "Development suite (in-sample)"}
+
 
 def _workflow(suite: str) -> ArenaWorkflow:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(message)s", datefmt="%H:%M:%S")
@@ -267,11 +269,12 @@ def results(
     for spec in sections:
         suite, policy, *field_ = spec.split(":")
         entrants = set(field_[0].split(",")) if field_ else None
-        [result] = _workflow(suite).analyze([policy], entrants)
-        title = f"{suite} suite - {result.board.tasks} real bugs"
+        workflow = _workflow(suite)
+        [result] = workflow.analyze([policy], entrants)
+        title = f"{SUITE_TITLE[suite]} - {result.board.tasks} real bugs, policy `{policy}`"
         if entrants:
             title += f", field: {', '.join(sorted(entrants))}"
-        rendered.append((title, result))
+        rendered.append(markdown.Section(title, result, workflow.evidence_signal()))
     block = markdown.results_block(rendered)
     if into is None:
         out.print(block, markup=False, highlight=False)
