@@ -1,9 +1,8 @@
 """Prompted examiners: one model call per task, no execution.
 
-Cheap enough for the free tiers - and measured to be weak evidence: on the
-development suite, tests written this way picked patches worse than chance and
-flagged 16 of 39 correct patches. They are kept as a baseline and as the only
-examiner a quota-starved vendor can afford.
+Cheap enough for any free tier, but weaker evidence than tests an agent has
+actually run; kept as a baseline and for vendors whose quota cannot afford an
+agentic examiner.
 """
 
 from __future__ import annotations

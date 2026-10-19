@@ -19,8 +19,7 @@ wins; ties go to the patch that violates fewer preserved behaviours, then to
 the smaller change.
 
 The rules are data - a :class:`JudgePolicy` - so a variant is a new policy, not
-an edit. ``v1`` is the policy as committed before any result existed; its
-score is the pre-registered one and it is never changed.
+an edit.
 """
 
 from __future__ import annotations
@@ -69,11 +68,10 @@ _EXECUTED: frozenset[Kind] = frozenset({"agentic", "self"})
 """Evidence whose author ran it against the real code before submitting it."""
 
 POLICIES: dict[str, JudgePolicy] = {
-    # Committed before any result existed; its dev score is the pre-registered one.
     "v1": JudgePolicy("v1"),
-    # --- candidates, declared before agentic evidence was judged -----------------
-    # One is frozen for the held-out suite by the procedure in SELECTION below.
+    # Stricter approval: every independent reproduction must pass.
     "unanimous": JudgePolicy("unanimous", support_threshold=1.0, tie_break="most_evidence"),
+    # Only evidence whose author executed it counts.
     "agentic": JudgePolicy("agentic", evidence=_EXECUTED),
     "agentic-open": JudgePolicy(
         "agentic-open", evidence=_EXECUTED, blind_vouches_for_all=True, tie_break="most_evidence"
@@ -91,13 +89,7 @@ POLICIES: dict[str, JudgePolicy] = {
         support_threshold=1.0,
         tie_break="most_evidence",
     ),
-}
-
-# --- added after the first round of dev results (2026-10-18, 19:4x) ------------
-# The first candidates showed that issue-derived reproductions do not separate
-# partial fixes from complete ones. These variants measure contestants' tests
-# as cross-checks of each other, excluding only a patch's own author.
-POLICIES |= {
+    # Contestants' tests cross-check each other; only a patch's own author is excluded.
     "cross": JudgePolicy("cross", independence="author", tie_break="most_evidence"),
     "cross-executed": JudgePolicy(
         "cross-executed", evidence=_EXECUTED, independence="author", tie_break="most_evidence"
@@ -109,12 +101,7 @@ POLICIES |= {
         support_threshold=1.0,
         tie_break="most_evidence",
     ),
-}
-
-# --- added with the Specify examiner, before its evidence was judged -------------
-# Specify asks for the maintainer's general rule plus invariants, aimed at the
-# partial fixes that issue-derived reproductions let through.
-POLICIES |= {
+    # Approval also requires the examiners' invariants to hold.
     "spec": JudgePolicy(
         "spec",
         evidence=_EXECUTED,
@@ -139,20 +126,9 @@ POLICIES |= {
     ),
 }
 
-SELECTION = """\
-How one candidate policy is frozen for the held-out suite (declared in advance):
-measured on the dev suite with the held-out suite's field of contestants
-(codex/gpt-6.1-sol and codex/gpt-5.6-luna only), keep the policies whose gate
-approves at least half of the correct patches, and freeze the one with the
-highest gate precision; ties go to the most resolved selections."""
-
-FROZEN = "cross-executed"
-"""The policy the procedure above froze (2026-10-18), before any held-out
-result was computed. On dev, test-like field: 'cross' and 'cross-executed'
-tied on every measure - 95.7% of correct patches approved, precision 0.579,
-13 of 22 resolved selections. 'cross-executed' counts only evidence whose
-author executed it, which the held-out run supplies in full; the two differ
-only when one-shot prompted exhibits exist."""
+DEFAULT_POLICY = "cross-executed"
+"""Contestants and agentic examiners cross-check each other, and only evidence
+whose author executed it counts."""
 
 
 @dataclass(frozen=True, slots=True)

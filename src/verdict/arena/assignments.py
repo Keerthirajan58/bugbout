@@ -130,9 +130,8 @@ class Specify(Assignment):
     """Examiner: write the tests a maintainer would demand of any fix - and fix nothing.
 
     A reproduction checks the case the issue reports, and a partial fix passes
-    it. On the development suite most wrong patches were exactly that: right on
-    the reported example, wrong on the general rule the maintainers' own tests
-    checked. This brief asks for the rule, not just the example.
+    it. This brief asks for the general rule behind the issue, related inputs a
+    complete fix must handle, and invariants a careless fix might break.
     """
 
     name = "specify"

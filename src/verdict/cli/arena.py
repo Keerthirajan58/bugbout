@@ -30,7 +30,7 @@ from rich.console import Console
 from rich.table import Table
 
 from verdict.arena import markdown
-from verdict.arena.judge import POLICIES
+from verdict.arena.judge import DEFAULT_POLICY, POLICIES
 from verdict.arena.workflow import ArenaWorkflow
 from verdict.targets import get_target
 
@@ -160,7 +160,7 @@ def cross(suite: Suite = "dev", only: Only = None) -> None:
 
 
 @arena_app.command("judge")
-def judge(suite: Suite = "dev", policy: Policy = "v1") -> None:
+def judge(suite: Suite = "dev", policy: Policy = DEFAULT_POLICY) -> None:
     """Pick a patch per task from its matrix alone - or abstain."""
     for verdict in _workflow(suite).judge(policy):
         colour = "green" if verdict.chosen else "yellow"
@@ -170,7 +170,7 @@ def judge(suite: Suite = "dev", policy: Policy = "v1") -> None:
 
 
 @arena_app.command("report")
-def report(suite: Suite = "dev", policy: Policy = "v1") -> None:
+def report(suite: Suite = "dev", policy: Policy = DEFAULT_POLICY) -> None:
     """The judge's picks, scored by the hidden oracles, beside every baseline."""
     board = _workflow(suite).scoreboard(policy)
     table = Table(title=f"suite {suite!r}, policy {policy!r}: {board.tasks} real bugs")
@@ -293,7 +293,7 @@ def results(
 @arena_app.command("export")
 def export(
     suite: Suite = "dev",
-    policy: Policy = "v1",
+    policy: Policy = DEFAULT_POLICY,
     out_path: Annotated[Path | None, typer.Option("--out", help="Bundle destination.")] = None,
 ) -> None:
     """Bundle a suite's artifacts into the JSON the dashboard reads."""

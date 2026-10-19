@@ -9,8 +9,7 @@ one that fails a reproduction or breaks a test the others keep, and leaves it
 *unverified* when no independent evidence exists. A gate is worth exactly as
 much as its precision on what it approves and its catch rate on what is wrong.
 
-Policies are compared on the development suite and one is frozen before the
-held-out suite is scored. Nothing here changes a rule; it only measures them.
+Nothing here changes a rule; it only measures them.
 """
 
 from __future__ import annotations

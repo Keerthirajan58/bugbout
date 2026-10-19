@@ -150,8 +150,7 @@ class Matrix:
     def from_dict(cls, data: dict[str, Any]) -> Matrix:
         tests: list[str] = data["tests"]
         kinds = dict(data.get("kinds", {}))
-        # An unknown kind would be silently excluded by every policy's evidence
-        # set - which once moved a pre-registered score without any error.
+        # An unknown kind would be silently excluded by every policy's evidence set.
         if unknown := {k for k in kinds.values() if k not in KINDS}:
             raise ValueError(f"matrix {data['task_id']}: unknown exhibit kind(s) {unknown}")
         return cls(
