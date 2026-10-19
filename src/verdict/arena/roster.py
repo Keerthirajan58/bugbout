@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from verdict.arena.agents import CodexAgent, CodingAgent, GeminiAgent, MiniSweAgent, OllamaServer
+from verdict.arena.assignments import Reproduce, Specify
 from verdict.arena.examiners import AgentExaminer, Examiner, PromptExaminer
 from verdict.config import Settings
 from verdict.llm.providers import GeminiProvider, GroqProvider, OllamaProvider
@@ -60,11 +61,14 @@ class Roster:
                 context_budget=40_000,
             ),
             "codex-reproducer": lambda: AgentExaminer(
-                CodexAgent("gpt-6.1-sol"), lane_slots={"chatgpt": 2}
+                CodexAgent("gpt-6.1-sol"), Reproduce(), lane_slots={"chatgpt": 2}
+            ),
+            "codex-specifier": lambda: AgentExaminer(
+                CodexAgent("gpt-6.1-sol"), Specify(), lane_slots={"chatgpt": 2}
             ),
             # 125 requests a minute; one attempt uses ~40 a minute, so three fit.
             "codestral-reproducer": lambda: AgentExaminer(
-                self.contestant("codestral"), lane_slots={"mistral": 3}
+                self.contestant("codestral"), Reproduce(), lane_slots={"mistral": 3}
             ),
         }
 

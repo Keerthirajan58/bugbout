@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from verdict.arena.agents.base import CodingAgent, RunRecord
-from verdict.arena.assignments import REPRODUCTION_TEST, Fix
+from verdict.arena.assignments import REPRODUCTION_TEST, Fix, Reproduce
 from verdict.arena.examiners import AgentExaminer, ExamRoom
 from verdict.arena.layout import ArenaLayout
 from verdict.arena.race import Race
@@ -139,8 +139,8 @@ def test_an_examiners_source_edits_are_discarded_and_noted(tmp_path: Path) -> No
     layout = _Layout(tmp_path)
     agent = _Agent(edit_source=True, write_test=f"tests/{REPRODUCTION_TEST}")
     room = ExamRoom(layout, "dev", source_context=lambda task, budget: "")
-    [exhibit] = AgentExaminer(agent).examine([_task("t1")], room)
+    [exhibit] = AgentExaminer(agent, Reproduce()).examine([_task("t1")], room)
     assert exhibit.kind == "agentic"
-    assert exhibit.author == "examiner/fake/agent"
+    assert exhibit.author == "examiner/reproduce/fake/agent"
     assert "def test_it" in exhibit.test_code
     assert "edits discarded" in exhibit.note

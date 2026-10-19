@@ -20,6 +20,9 @@ REGRESSION_TEST = "test_issue_regression.py"
 REPRODUCTION_TEST = "test_issue_reproduction.py"
 """Where an examiner is asked to put its reproduction of the issue."""
 
+SPECIFICATION_TEST = "test_issue_specification.py"
+"""Where a specifying examiner is asked to put the tests it would demand of a fix."""
+
 
 @dataclass(frozen=True, slots=True)
 class Brief:
@@ -123,4 +126,51 @@ you are finished, reply with a short summary of what each test checks.
 """
 
 
-ASSIGNMENTS: dict[str, Assignment] = {a.name: a for a in (Fix(), Reproduce())}
+class Specify(Assignment):
+    """Examiner: write the tests a maintainer would demand of any fix - and fix nothing.
+
+    A reproduction checks the case the issue reports, and a partial fix passes
+    it. On the development suite most wrong patches were exactly that: right on
+    the reported example, wrong on the general rule the maintainers' own tests
+    checked. This brief asks for the rule, not just the example.
+    """
+
+    name = "specify"
+    test_file = SPECIFICATION_TEST
+
+    @property
+    def template(self) -> str:
+        return """\
+You are the maintainer of the {repo} repository who will review fixes for the issue below. \
+Before anyone has fixed it, write the regression tests you would require a correct fix to pass. \
+Your working directory is a checkout at a commit where the issue is still open. There is no git \
+history.
+
+<issue>
+# {title}
+
+{statement}
+</issue>
+
+1. Do NOT modify the library's source code (under `{source_root}/`) or any existing test.
+2. Read the relevant source and the existing tests until you understand the behaviour the \
+library intends. Work out the general rule the issue implies - not just its literal example.
+3. Write pytest tests in a NEW file, `{test_root}/{test_file}`, in three groups:
+   a. the case the issue reports;
+   b. the same rule on closely related inputs a complete fix must also handle - other types \
+or values the same code path accepts, boundaries, the sibling branch of the same logic;
+   c. nearby behaviour the issue does not ask to change, which a careless fix might break.
+4. Run them with this exact command, which points Python at this checkout:
+   {runner} {test_root}/{test_file}
+   Every test in groups a and b MUST fail on the current code, because of the bug. If a related \
+input already works, it is not part of the bug: move it to group c or drop it. Every test in \
+group c MUST pass on the current code. Each failure must come from the bug - never from a typo, \
+a wrong import, a misremembered API or a mistaken expectation. Check each expectation against \
+the source and the existing tests before you keep it.
+
+Work only inside this directory, and do not download the project or look it up online. When \
+you are finished, reply with a short summary of the rule you tested and why.
+"""
+
+
+ASSIGNMENTS: dict[str, Assignment] = {a.name: a for a in (Fix(), Reproduce(), Specify())}

@@ -1,4 +1,4 @@
-"""Agentic examiners: a coding agent that captures the issue as a failing test.
+"""Agentic examiners: a coding agent that captures the issue as failing tests.
 
 The examiner works in its own clean checkout of the base commit, may explore
 and execute anything, and is told to fix nothing. Its brief requires the test
@@ -13,7 +13,7 @@ journal, same lanes. Only the assignment differs.
 from __future__ import annotations
 
 from verdict.arena.agents.base import CodingAgent
-from verdict.arena.assignments import Reproduce
+from verdict.arena.assignments import Assignment
 from verdict.arena.examiners.base import Examiner, ExamRoom
 from verdict.arena.examiners.exhibit import Exhibit
 from verdict.arena.race import Attempt, Race
@@ -22,10 +22,16 @@ from verdict.review.tasks import IssueTask
 
 class AgentExaminer(Examiner):
     def __init__(
-        self, agent: CodingAgent, *, timeout: int = 1800, lane_slots: dict[str, int] | None = None
+        self,
+        agent: CodingAgent,
+        assignment: Assignment,
+        *,
+        timeout: int = 1800,
+        lane_slots: dict[str, int] | None = None,
     ) -> None:
         self.agent = agent
-        self.author = f"examiner/{agent.name}"
+        self.assignment = assignment
+        self.author = f"examiner/{assignment.name}/{agent.name}"
         self.timeout = timeout
         self.lane_slots = lane_slots or {}
 
@@ -34,13 +40,13 @@ class AgentExaminer(Examiner):
         return [self.agent]
 
     def describe(self) -> dict[str, object]:
-        return {"kind": "agentic", **self.agent.describe()}
+        return {"kind": "agentic", "assignment": self.assignment.name, **self.agent.describe()}
 
     def examine(self, tasks: list[IssueTask], room: ExamRoom) -> list[Exhibit]:
         race = Race(
             room.layout,
             room.suite,
-            Reproduce(),
+            self.assignment,
             timeout=self.timeout,
             lane_slots=self.lane_slots,
         )
@@ -50,7 +56,7 @@ class AgentExaminer(Examiner):
     def _exhibit(self, task: IssueTask, attempt: Attempt, room: ExamRoom) -> Exhibit:
         test_root = room.layout.bench(task.target_slug).target.test_root
         created = attempt.patch.only(under=test_root, keep=True).created()
-        wanted = f"{test_root}/{Reproduce.test_file}"
+        wanted = f"{test_root}/{self.assignment.test_file}"
         code = created.get(wanted) or next(iter(created.values()), "")
         notes = []
         if attempt.source_files:

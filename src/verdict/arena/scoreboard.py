@@ -47,6 +47,8 @@ class Scoreboard:
 
     @property
     def best_single(self) -> tuple[str, int]:
+        if not self.per_entrant:
+            return "none", 0
         name, stats = max(self.per_entrant.items(), key=lambda kv: kv[1]["resolved"])
         return name, stats["resolved"]
 
