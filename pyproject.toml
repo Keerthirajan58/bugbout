@@ -30,6 +30,9 @@ dependencies = [
     "tenacity>=9.0",
     # mutation engine: standard operator taxonomy + format-preserving parso AST
     "cosmic-ray>=8.7",
+    # lexical retrieval; imported by the CLI, so required rather than optional
+    "numpy>=1.26",
+    "rank-bm25>=0.2.2",
 ]
 
 [project.optional-dependencies]
@@ -40,7 +43,6 @@ llm = [
 ]
 # Phase 3: knowledge base + hybrid retrieval.
 rag = [
-    "rank-bm25>=0.2.2",
     "fastembed>=0.5",
     "psycopg[binary]>=3.2",
     "pgvector>=0.3.6",
