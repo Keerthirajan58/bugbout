@@ -98,6 +98,20 @@ export interface Task {
   };
 }
 
+export interface Signal {
+  source: string;
+  auc: number;
+  correct: number;
+  wrong: number;
+}
+
+export interface Blindness {
+  patches: number;
+  wrong: number;
+  wrong_passing_every_reproduction: number;
+  wrong_scored: number;
+}
+
 export interface Participant {
   name: string;
   vendor: string;
@@ -110,6 +124,8 @@ export interface Bundle {
   generated_at: string;
   scoreboard: Scoreboard;
   gate: Gate;
+  signals: Signal[];
+  blindness: Blindness;
   entrants: Participant[];
   examiners: Participant[];
   tasks: Task[];

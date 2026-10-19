@@ -262,6 +262,14 @@ class ArenaWorkflow:
         """How well each source of evidence separates correct from wrong patches."""
         return analysis.evidence_signal(self.store.matrices(), self.store.resolutions())
 
+    def reproduction_blindness(
+        self, author: str = "examiner/reproduce/codex/gpt-6.1-sol"
+    ) -> analysis.Blindness:
+        """How many wrong patches pass every test an examiner wrote from the issue."""
+        return analysis.reproduction_blindness(
+            self.store.matrices(), self.store.resolutions(), author
+        )
+
     def scoreboard(self, policy: str = "v1") -> scoreboard.Scoreboard:
         matrices = self.store.matrices()
         return scoreboard.build(
@@ -303,6 +311,8 @@ class ArenaWorkflow:
             resolutions=self.store.resolutions(),
             judge=Judge(policy),
             board=self.analyze([policy])[0].board,
+            signals=self.evidence_signal(),
+            blindness=self.reproduction_blindness(),
         )
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(bundle, indent=1, default=str), encoding="utf-8")

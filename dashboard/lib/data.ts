@@ -33,6 +33,7 @@ export function getTask(suite: SuiteName, taskId: string): Task | undefined {
 
 /** `codex/gpt-6.1-sol` -> `gpt-6.1-sol`; `examiner/specify/codex/gpt-6.1-sol` -> `specify · gpt-6.1-sol`. */
 export function shortName(name: string): string {
+  if (!name.includes("/")) return name;
   const parts = name.split("/");
   const model = parts[parts.length - 1];
   if (parts[0] !== "examiner") return model;

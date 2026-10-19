@@ -16,17 +16,102 @@ the system was never tuned on.
 ## Results
 
 <!-- results:begin -->
+
+### Held-out suite - 30 real bugs, policy `cross-executed`
+
+**20 of 60** agent attempts did not resolve their bug by the maintainers' tests. Of those wrong patches, **16 of 18** pass every reproduction an examiner wrote from the issue: they fix the symptom the issue describes and still fail the maintainer's tests.
+
+**Gating a patch** - an agent says it is done; may it merge?
+
+| Patches | Correct | Wrong |
+|---|---|---|
+| approved (56) | 39 | 17 |
+| rejected (4) | 1 | 3 |
+| unverified (0) | 0 | 0 |
+| **all** (60) | 40 | 20 |
+
+Precision of an approval: **70%**, against 67% for merging every patch an agent reported done. Wrong patches caught: **3/20**. Correct patches rejected: 1/40.
+
+**Choosing a patch** - several agents fixed the same issue; which one ships?
+
+| Selector | Resolved |
+|---|---|
+| codex/gpt-5.6-luna alone | 20/30 |
+| codex/gpt-6.1-sol alone | 20/30 |
+| random pick among the patches | 20.0/30 |
+| **Verdict** (policy `cross-executed`) | **21/30** |
+| best possible (any agent solved it) | 22/30 |
+
+Verdict picked a patch on 29 tasks (8 wrong) and abstained on 1 (1 of them tasks no agent solved).
+
+**How much each source of evidence can tell** - correct from wrong patches
+
+| Evidence source | AUC | Correct / wrong patches scored |
+|---|---|---|
+| codex/gpt-6.1-sol | 0.77 | 20 / 10 |
+| examiner/specify/codex/gpt-6.1-sol | 0.64 | 31 / 17 |
+| examiner/reproduce/mini-swe-agent/codestral-latest | 0.55 | 27 / 17 |
+| examiner/reproduce/codex/gpt-6.1-sol | 0.53 | 40 / 18 |
+| codex/gpt-5.6-luna | 0.53 | 20 / 10 |
+| the repository's existing suite | 0.45 | 40 / 20 |
+
+AUC: the chance that a correct patch scores higher than a wrong one on that source's tests - 0.5 is a coin flip. No author is scored on its own patch.
+
+### Development suite (in-sample) - 22 real bugs, policy `cross-executed`, field: claude-code, codex/gpt-5.6-luna, codex/gpt-6.1-sol
+
+**27 of 66** agent attempts did not resolve their bug by the maintainers' tests. Of those wrong patches, **22 of 24** pass every reproduction an examiner wrote from the issue: they fix the symptom the issue describes and still fail the maintainer's tests.
+
+**Gating a patch** - an agent says it is done; may it merge?
+
+| Patches | Correct | Wrong |
+|---|---|---|
+| approved (58) | 38 | 20 |
+| rejected (7) | 1 | 6 |
+| unverified (0) | 0 | 0 |
+| **all** (65) | 39 | 26 |
+
+Precision of an approval: **66%**, against 60% for merging every patch an agent reported done. Wrong patches caught: **6/26**. Correct patches rejected: 1/39.
+
+**Choosing a patch** - several agents fixed the same issue; which one ships?
+
+| Selector | Resolved |
+|---|---|
+| claude-code alone | 16/22 |
+| codex/gpt-6.1-sol alone | 14/22 |
+| codex/gpt-5.6-luna alone | 9/22 |
+| random pick among the patches | 13.0/22 |
+| **Verdict** (policy `cross-executed`) | **15/22** |
+| best possible (any agent solved it) | 17/22 |
+
+Verdict picked a patch on 21 tasks (6 wrong) and abstained on 1 (1 of them tasks no agent solved).
+
+**How much each source of evidence can tell** - correct from wrong patches
+
+| Evidence source | AUC | Correct / wrong patches scored |
+|---|---|---|
+| codex/gpt-6.1-sol | 0.73 | 25 / 18 |
+| examiner/qwen3.8-27b | 0.65 | 27 / 20 |
+| examiner/specify/codex/gpt-6.1-sol | 0.61 | 39 / 24 |
+| examiner/reproduce/mini-swe-agent/codestral-latest | 0.57 | 29 / 18 |
+| the repository's existing suite | 0.56 | 39 / 26 |
+| codex/gpt-5.6-luna | 0.54 | 30 / 13 |
+| examiner/reproduce/codex/gpt-6.1-sol | 0.49 | 39 / 24 |
+| examiner/gemini-flash | 0.41 | 35 / 22 |
+
+AUC: the chance that a correct patch scores higher than a wrong one on that source's tests - 0.5 is a coin flip. No author is scored on its own patch.
+
 <!-- results:end -->
 
 ---
 
 ## What it found
 
-- **Agents report success either way.** Every agent finished every task saying it
-  was done. A large share of those patches were wrong by the maintainers' tests.
-- **Most wrong patches are partial fixes.** They fix the example in the issue and
-  miss the general rule the maintainer's tests check, so a test written from the
-  issue passes them.
+- **Agents report success either way.** Every Codex attempt on the held-out suite
+  ended by reporting success; the results above show how many of those patches the
+  maintainers' tests reject.
+- **Wrong patches fix the symptom, not the bug.** Nearly every wrong patch passes
+  every reproduction an examiner wrote from the issue - it fixes what the issue
+  describes - and still fails the maintainer's tests, which check the rule behind it.
 - **Tests written from the issue barely separate right from wrong.** Five examiner
   designs were measured, including agents that execute their tests and agents told
   to think like the reviewing maintainer. Most land near a coin flip.
@@ -35,9 +120,9 @@ the system was never tuned on.
   most informative source. A blind test encodes its writer's guess at the
   maintainer's intent, and that guess is wrong about as often as the patches are.
   Verification is bounded by the verifier's ability to solve the problem.
-- **With one dominant agent, picking among agents can match it, not beat it.**
-  Selection pays only when agents are complementary; the gate is where independent
-  evidence earns its place.
+- **Picking among agents pays only where they disagree.** A selector can at best
+  recover the bugs one agent solved and another did not; when one agent dominates,
+  it can match that agent and no more.
 
 ## How it works
 

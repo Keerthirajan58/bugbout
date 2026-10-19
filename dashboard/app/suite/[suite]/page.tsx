@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { GateTable, SelectionTable } from "@/components/Scoreboards";
+import { SignalChart } from "@/components/SignalChart";
 import { TaskTable } from "@/components/TaskTable";
 import { SUITE_LABEL, SUITES, getBundle, isSuite } from "@/lib/data";
 
@@ -36,6 +37,10 @@ export default async function SuitePage({ params }: { params: Promise<{ suite: s
           <h2 className="text-lg font-semibold">Choosing a patch per bug</h2>
           <SelectionTable board={bundle.scoreboard} />
         </div>
+      </section>
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">How much each source of evidence can tell</h2>
+        <SignalChart signals={bundle.signals} />
       </section>
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Every bug</h2>

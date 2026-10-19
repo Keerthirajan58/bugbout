@@ -13,7 +13,7 @@ from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
 
-from verdict.arena.analysis import gate_stats
+from verdict.arena.analysis import Blindness, SourceSignal, gate_stats
 from verdict.arena.examiners.exhibit import Exhibit
 from verdict.arena.judge import Judge, Standing, Verdict
 from verdict.arena.matrix import BASE, Matrix
@@ -40,6 +40,8 @@ def build_bundle(
     resolutions: list[Resolution],
     judge: Judge,
     board: Scoreboard,
+    signals: list[SourceSignal],
+    blindness: Blindness,
 ) -> dict[str, Any]:
     by_key = {(r.task_id, r.entrant): r for r in resolutions}
     code_of = {(e.task_id, e.author): e.test_code for e in exhibits}
@@ -53,6 +55,8 @@ def build_bundle(
         "policy": judge.policy.name,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "scoreboard": _scoreboard(board),
+        "signals": [asdict(signal) for signal in signals],
+        "blindness": asdict(blindness),
         "gate": {
             **asdict(gate),
             "precision": round(gate.precision, 3),

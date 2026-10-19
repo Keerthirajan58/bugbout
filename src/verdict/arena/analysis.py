@@ -177,3 +177,37 @@ def _signal(source: str, pairs: list[tuple[float, bool]]) -> SourceSignal:
         return SourceSignal(source, float("nan"), len(good), len(bad))
     wins = sum((g > b) + 0.5 * (g == b) for g in good for b in bad)
     return SourceSignal(source, wins / (len(good) * len(bad)), len(good), len(bad))
+
+
+@dataclass(frozen=True, slots=True)
+class Blindness:
+    """How many wrong patches the issue's own reproduction tests let through."""
+
+    patches: int
+    wrong: int
+    wrong_passing_every_reproduction: int
+    wrong_scored: int
+    """Wrong patches on tasks where the reference author's reproduction reproduced the bug."""
+
+
+def reproduction_blindness(
+    matrices: dict[str, Matrix], resolutions: list[Resolution], author: str
+) -> Blindness:
+    """Of the wrong patches, how many pass every reproduction ``author`` wrote.
+
+    A wrong patch that passes them fixed the symptom the issue describes and
+    still failed the maintainer's tests: no test written from the issue alone
+    could have caught it.
+    """
+    wrong = [r for r in resolutions if not r.resolved]
+    passing = scored = 0
+    for r in wrong:
+        matrix = matrices.get(r.task_id)
+        if matrix is None or author not in matrix.exhibits or r.entrant not in matrix.outcomes:
+            continue
+        module = matrix.exhibits[author]
+        repro = [t for t, o in matrix.outcomes[BASE].items() if module in t and o == "failed"]
+        if repro:
+            scored += 1
+            passing += all(matrix.passes(r.entrant, t) for t in repro)
+    return Blindness(len(resolutions), len(wrong), passing, scored)

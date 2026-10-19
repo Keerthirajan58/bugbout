@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from verdict.arena.analysis import PolicyResult, SourceSignal
+from verdict.arena.analysis import Blindness, PolicyResult, SourceSignal
 
 BEGIN = "<!-- results:begin -->"
 END = "<!-- results:end -->"
@@ -23,6 +23,7 @@ class Section:
     title: str
     result: PolicyResult
     signals: list[SourceSignal]
+    blindness: Blindness | None = None
 
 
 def selection_table(result: PolicyResult) -> str:
@@ -69,6 +70,15 @@ def gate_table(result: PolicyResult) -> str:
     )
 
 
+def blindness_line(b: Blindness) -> str:
+    return (
+        f"**{b.wrong} of {b.patches}** agent attempts did not resolve their bug by the "
+        f"maintainers' tests. Of those wrong patches, **{b.wrong_passing_every_reproduction} of "
+        f"{b.wrong_scored}** pass every reproduction an examiner wrote from the issue: they fix "
+        f"the symptom the issue describes and still fail the maintainer's tests."
+    )
+
+
 def signal_table(signals: list[SourceSignal]) -> str:
     rows = ["| Evidence source | AUC | Correct / wrong patches scored |", "|---|---|---|"]
     rows += [f"| {s.source} | {s.auc:.2f} | {s.correct} / {s.wrong} |" for s in signals]
@@ -81,9 +91,10 @@ def signal_table(signals: list[SourceSignal]) -> str:
 def results_block(sections: list[Section]) -> str:
     parts = [BEGIN, ""]
     for section in sections:
+        parts += [f"### {section.title}", ""]
+        if section.blindness:
+            parts += [blindness_line(section.blindness), ""]
         parts += [
-            f"### {section.title}",
-            "",
             "**Gating a patch** - an agent says it is done; may it merge?",
             "",
             gate_table(section.result),

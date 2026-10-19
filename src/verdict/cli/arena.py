@@ -274,7 +274,11 @@ def results(
         title = f"{SUITE_TITLE[suite]} - {result.board.tasks} real bugs, policy `{policy}`"
         if entrants:
             title += f", field: {', '.join(sorted(entrants))}"
-        rendered.append(markdown.Section(title, result, workflow.evidence_signal()))
+        rendered.append(
+            markdown.Section(
+                title, result, workflow.evidence_signal(), workflow.reproduction_blindness()
+            )
+        )
     block = markdown.results_block(rendered)
     if into is None:
         out.print(block, markup=False, highlight=False)
