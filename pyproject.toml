@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "verdict"
 dynamic = ["version"]
-description = "An adversarial, retrieval-grounded code verification agent."
+description = "Race coding agents on real bugs, cross-examine their patches, and judge by execution."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
