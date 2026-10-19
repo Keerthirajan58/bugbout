@@ -29,6 +29,7 @@ import typer
 from rich.console import Console
 from rich.table import Table
 
+from verdict.arena import markdown
 from verdict.arena.judge import POLICIES
 from verdict.arena.workflow import ArenaWorkflow
 from verdict.targets import get_target
@@ -235,6 +236,37 @@ def analyze(
             f"  best single agent: {best} {count}/{board.tasks}   best possible: "
             f"{board.best_possible}/{board.tasks}   random: {board.random_pick:.1f}"
         )
+
+
+@arena_app.command("results")
+def results(
+    sections: Annotated[
+        list[str],
+        typer.Option(
+            "--section",
+            help="suite:policy[:entrant,entrant] - one table pair per section; repeatable.",
+        ),
+    ],
+    into: Annotated[
+        Path | None, typer.Option(help="Rewrite the generated block in this markdown file.")
+    ] = None,
+) -> None:
+    """Render measured results as markdown - into the README, or to stdout."""
+    rendered = []
+    for spec in sections:
+        suite, policy, *field_ = spec.split(":")
+        entrants = set(field_[0].split(",")) if field_ else None
+        [result] = _workflow(suite).analyze([policy], entrants)
+        title = f"{suite} suite - {result.board.tasks} real bugs"
+        if entrants:
+            title += f", field: {', '.join(sorted(entrants))}"
+        rendered.append((title, result))
+    block = markdown.results_block(rendered)
+    if into is None:
+        out.print(block, markup=False, highlight=False)
+        return
+    markdown.splice(into, block)
+    out.print(f"results block rewritten in {into}")
 
 
 @arena_app.command("export")
