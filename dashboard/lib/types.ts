@@ -1,114 +1,116 @@
-/** Shapes emitted by `verdict eval export`. Mirrors src/verdict/eval/export.py. */
+/**
+ * The shape of a suite bundle, as written by `verdict arena export`.
+ * Every value here was produced by a run; the dashboard only displays it.
+ */
 
-export type Arm = "no_retrieval" | "with_retrieval";
+export type Outcome = "passed" | "failed" | "error" | "skipped" | "absent";
+export type Kind = "agentic" | "prompted" | "self";
+export type SuiteName = "dev" | "test";
 
-export interface RetrievedItem {
-  doc_id: string;
-  kind: "incident" | "revert" | "call_site" | "code_chunk";
-  citation: string;
-  title: string;
-  module_path: string | null;
-  symbols: string[];
-  score: number;
-  /** Why this ranked where it did: bm25 rank, vector rank, and any scope boosts. */
-  why: string;
-  url?: string | null;
+export interface EntrantStats {
+  resolved: number;
+  fixed_bug: number;
+  broke_tests: number;
 }
 
-export interface Case {
-  mutantId: string;
-  arm: Arm;
-  target: string;
-  modulePath: string;
-  function: string | null;
-  operator: string;
-  family: string;
+export interface Scoreboard {
+  tasks: number;
+  per_entrant: Record<string, EntrantStats>;
+  best_single: { entrant: string; resolved: number };
+  random_pick: number;
+  verdict_resolved: number;
+  verdict_picks: number;
+  wrong_picks: number;
+  abstained: number;
+  abstained_correctly: number;
+  best_possible: number;
+}
+
+export interface Gate {
+  approved_correct: number;
+  approved_wrong: number;
+  rejected_correct: number;
+  rejected_wrong: number;
+  unverified_correct: number;
+  unverified_wrong: number;
+  precision: number;
+  base_rate: number;
+  catch_rate: number;
+  false_alarm_rate: number;
+}
+
+export interface Standing {
+  support: number | null;
+  judges: string[];
+  reproductions_passed: number;
+  reproductions_total: number;
+  breaks: string[];
+  breaks_total: number;
+  lines_changed: number;
+  invariant_failures: number;
+  approved: boolean;
+}
+
+export interface Candidate {
+  entrant: string;
+  vendor: string;
   diff: string;
-  verdict: string;
-  caught: boolean;
-  reason: string;
-  hypothesis: string;
-  reasoning: string;
-  testName: string;
-  testCode: string;
-  confident: boolean;
-  repairs: number;
-  /** Candidate tests rejected for failing against the unmutated code. */
-  gateFailures?: number;
-  /** The Prosecutor's stated prediction for each side of the diff. */
-  originalBehaviour?: string;
-  changedBehaviour?: string;
-  model: string;
-  reviewReason: string | null;
-  citation: string | null;
-  retrieved: RetrievedItem[];
+  status: string;
+  seconds: number;
+  summary: string;
+  resolved: boolean;
+  fixed_bug: boolean;
+  broke: string[];
+  standing: Standing | null;
 }
 
-export interface ArmStats {
-  total: number;
-  caught: number;
-  catchRate: number;
-  executionConfirmed?: number;
-  executionRate?: number;
-  byVerdict: Record<string, number>;
-  model: string;
-  corpusHash: string;
+export interface EvidenceTest {
+  id: string;
+  base: Outcome;
+  trees: Record<string, Outcome>;
 }
 
-export interface MutationStats {
-  total: number;
-  killRate: number;
-  survivors: number;
-  operators: number;
+export interface Evidence {
+  author: string;
+  vendor: string;
+  kind: Kind;
+  code: string;
+  reproduces: boolean;
+  tests: EvidenceTest[];
 }
 
-export interface Target {
-  slug: string;
-  fullName: string;
-  ref: string;
-  commit: string;
-  license: string;
-  rationale: string;
-  mutation?: MutationStats;
-  arms: Partial<Record<Arm, ArmStats>>;
-}
-
-export interface Results {
-  targets: Target[];
-  cases: Case[];
-  /** Present once the real-diff study has been run. */
-  realDiffs?: RealDiffStudy;
-}
-
-/** One reconstructed historical bug, and what an agent did with it. */
-export interface RealDiffTask {
-  taskId: string;
+export interface Task {
+  task_id: string;
+  repo: string;
   target: string;
   reference: number;
-  referenceKind: string;
+  url: string;
   title: string;
-  problemStatement: string;
-  baseCommit: string;
-  oracleTests: string[];
-  changedFiles: string[];
-  patch: string;
-  /** Did the maintainer's own test pass against the agent's diff? */
-  oracle: string | null;
-  /** Did the suite as it stood at the base commit still pass? */
-  regression: string | null;
-  resolved: boolean;
-  auditVerdict: string | null;
-  flagged: boolean;
-  hypothesis: string;
-  testCode: string;
-  originalBehaviour: string;
-  changedBehaviour: string;
-  citation: string | null;
-  retrieved: RetrievedItem[];
-  auditReason: string;
+  statement: string;
+  oracle: { fail_to_pass: number; pass_to_pass: number };
+  candidates: Candidate[];
+  evidence: Evidence[];
+  verdict: {
+    chosen: string | null;
+    reason: string;
+    chosen_resolved: boolean;
+    resolved_by: string[];
+  };
 }
 
-export interface RealDiffStudy {
-  tasks: RealDiffTask[];
-  arm: string | null;
+export interface Participant {
+  name: string;
+  vendor: string;
+  [detail: string]: unknown;
+}
+
+export interface Bundle {
+  suite: SuiteName;
+  policy: string;
+  generated_at: string;
+  scoreboard: Scoreboard;
+  gate: Gate;
+  entrants: Participant[];
+  examiners: Participant[];
+  tasks: Task[];
 }

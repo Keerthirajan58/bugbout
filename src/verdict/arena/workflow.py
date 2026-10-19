@@ -298,7 +298,7 @@ class ArenaWorkflow:
             matrices=self.store.matrices(),
             resolutions=self.store.resolutions(),
             judge=Judge(policy),
-            board=self.scoreboard(policy),
+            board=self.analyze([policy])[0].board,
         )
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(bundle, indent=1, default=str), encoding="utf-8")

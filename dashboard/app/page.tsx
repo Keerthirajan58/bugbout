@@ -1,185 +1,90 @@
 import Link from "next/link";
-import { AblationChart } from "@/components/AblationChart";
-import { RealDiffStudy } from "@/components/RealDiffStudy";
+import { Pipeline } from "@/components/Pipeline";
+import { GateTable, SelectionTable } from "@/components/Scoreboards";
 import { StatTile } from "@/components/StatTile";
-import {
-  caseKey,
-  getAblations,
-  getCases,
-  getRealDiffs,
-  getTargets,
-} from "@/lib/data";
-
-const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+import { getBundle, percent, shortName } from "@/lib/data";
 
 export default function Home() {
-  const targets = getTargets();
-  const ablations = getAblations();
-  const cases = getCases();
-  const realDiffs = getRealDiffs();
-
-  const corpus = targets.reduce((n, t) => n + (t.mutation?.survivors ?? 0), 0);
-  const mutants = targets.reduce((n, t) => n + (t.mutation?.total ?? 0), 0);
+  const test = getBundle("test");
+  const { scoreboard: board, gate } = test;
+  const wrongDone = gate.approved_wrong + gate.rejected_wrong + gate.unverified_wrong;
+  const allDone = wrongDone + gate.approved_correct + gate.rejected_correct + gate.unverified_correct;
 
   return (
     <div className="space-y-12">
       <section className="space-y-4">
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Does retrieval actually make an adversarial agent better at catching
-          regressions?
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
+          Several coding agents fix the same real bug.
+          <br />
+          Other agents write the tests that judge them.
         </h1>
-        <p className="max-w-3xl" style={{ color: "var(--text-secondary)" }}>
-          Verdict audits a code change by writing a regression test against
-          it, then proving that test by executing it on both versions of the
-          code. This page reports the measurement that matters: the same agent,
-          the same corpus, the same models — run once with the repository&apos;s
-          own history available and once without.
+        <p className="max-w-3xl text-base" style={{ color: "var(--text-secondary)" }}>
+          Verdict orchestrates off-the-shelf coding agents on bugs reconstructed from real repositories, has
+          independent examiner agents write the tests a maintainer would demand - without ever seeing a patch -
+          and lets executed tests, not a model&apos;s opinion, decide which patch may merge. Every result below is
+          scored against the maintainers&apos; own hidden tests, on {board.tasks} bugs the system was never tuned on.
         </p>
       </section>
 
       <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatTile
-          label="mutants scored"
-          value={mutants.toLocaleString()}
-          detail="objective ground truth"
+          label="Agent patches that were wrong"
+          value={`${wrongDone}/${allDone}`}
+          detail="every one reported as done by its agent"
         />
         <StatTile
-          label="surviving mutants"
-          value={corpus.toLocaleString()}
-          detail="pass the full suite and are still wrong"
+          label="Approved patches that were correct"
+          value={percent(gate.precision)}
+          detail={`vs ${percent(gate.base_rate)} if you merge everything`}
         />
         <StatTile
-          label="repositories"
-          value={String(targets.length)}
-          detail="pinned to commit SHAs"
+          label="Wrong patches caught"
+          value={percent(gate.catch_rate)}
+          detail={`${percent(gate.false_alarm_rate)} of correct patches rejected`}
         />
         <StatTile
-          label="cases recorded"
-          value={cases.length.toLocaleString()}
-          detail="every debate reconstructable"
+          label="Verdict's pick resolved the bug"
+          value={`${board.verdict_resolved}/${board.tasks}`}
+          detail={`best single agent ${board.best_single.resolved}/${board.tasks} (${shortName(board.best_single.entrant)})`}
         />
       </section>
 
-      <section className="space-y-5">
-        <h2 className="text-xl font-semibold">The ablation</h2>
-        <AblationChart rows={ablations} />
+      <section className="space-y-3">
+        <h2 className="text-xl font-semibold">How it works</h2>
+        <Pipeline />
       </section>
 
-      <section className="space-y-4">
-        <h2 className="text-xl font-semibold">Ground truth</h2>
-        <div className="scroll-x">
-          <table className="w-full text-sm">
-            <thead>
-              <tr style={{ color: "var(--text-muted)" }}>
-                <th className="py-2 text-left font-medium">repository</th>
-                <th className="py-2 text-right font-medium">mutants</th>
-                <th className="py-2 text-right font-medium">suite kill-rate</th>
-                <th className="py-2 text-right font-medium">survivors</th>
-              </tr>
-            </thead>
-            <tbody>
-              {targets.map((t) => (
-                <tr
-                  key={t.slug}
-                  className="border-t"
-                  style={{ borderColor: "var(--border)" }}
-                >
-                  <td className="py-2">
-                    <span className="font-medium">{t.fullName}</span>{" "}
-                    <span style={{ color: "var(--text-muted)" }}>
-                      {t.ref} · {t.license}
-                    </span>
-                  </td>
-                  <td className="py-2 text-right tabular-nums">
-                    {t.mutation?.total.toLocaleString() ?? "—"}
-                  </td>
-                  <td className="py-2 text-right tabular-nums">
-                    {t.mutation ? pct(t.mutation.killRate) : "—"}
-                  </td>
-                  <td className="py-2 text-right tabular-nums">
-                    {t.mutation?.survivors.toLocaleString() ?? "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      <section className="grid gap-8 lg:grid-cols-2">
+        <div className="space-y-3">
+          <h2 className="text-xl font-semibold">Gating a patch</h2>
+          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            An agent says it is done. May its patch merge?
+          </p>
+          <GateTable gate={gate} />
         </div>
-        <p
-          className="max-w-3xl text-sm"
-          style={{ color: "var(--text-secondary)" }}
-        >
-          A mutant is a small, plausible bug injected into the source. One the
-          test suite catches is killed; one that slips through <em>survived</em>{" "}
-          — a change that passes every test and is still wrong. Survivors are
-          the corpus the agent is scored on.
-        </p>
+        <div className="space-y-3">
+          <h2 className="text-xl font-semibold">Choosing a patch</h2>
+          <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+            Several agents fixed the same issue. Which one ships?
+          </p>
+          <SelectionTable board={board} />
+        </div>
       </section>
 
-      {realDiffs && realDiffs.tasks.length > 0 && (
-        <section className="space-y-5">
-          <h2 className="text-xl font-semibold">
-            Diffs an agent actually wrote
-          </h2>
-          <RealDiffStudy tasks={realDiffs.tasks} />
-        </section>
-      )}
-
-      {cases.length > 0 && (
-        <section className="space-y-4">
-          <h2 className="text-xl font-semibold">Cases</h2>
-          <ul className="space-y-2">
-            {cases.slice(0, 60).map((c) => (
-              <li key={caseKey(c)}>
-                <Link
-                  href={`/case/${caseKey(c)}`}
-                  className="flex flex-wrap items-baseline gap-3 rounded border px-3 py-2 text-sm transition-colors hover:brightness-105"
-                  style={{
-                    borderColor: "var(--border)",
-                    background: "var(--surface-1)",
-                  }}
-                >
-                  <span
-                    aria-hidden
-                    className="inline-block h-2.5 w-2.5 rounded-full"
-                    style={{
-                      background: c.caught
-                        ? "var(--good)"
-                        : "var(--text-muted)",
-                    }}
-                  />
-                  <code className="text-xs">{c.mutantId}</code>
-                  <span className="font-medium">
-                    {c.modulePath.split("/").pop()}:{c.function ?? "—"}
-                  </span>
-                  <span style={{ color: "var(--text-muted)" }}>
-                    {c.operator}
-                  </span>
-                  <span
-                    className="ml-auto"
-                    style={{ color: "var(--text-secondary)" }}
-                  >
-                    {c.verdict.replace(/_/g, " ")}
-                  </span>
-                  <span
-                    className="rounded px-1.5 py-0.5 text-xs"
-                    style={{
-                      background: "var(--surface-2)",
-                      color: "var(--text-secondary)",
-                    }}
-                  >
-                    {c.arm === "with_retrieval" ? "with retrieval" : "control"}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-          {cases.length > 60 && (
-            <p className="text-sm" style={{ color: "var(--text-muted)" }}>
-              Showing 60 of {cases.length}.
-            </p>
-          )}
-        </section>
-      )}
+      <p className="text-sm" style={{ color: "var(--text-secondary)" }}>
+        Every task, patch and test is browsable:{" "}
+        <Link href="/suite/test" className="underline underline-offset-4">
+          held-out suite
+        </Link>{" "}
+        ·{" "}
+        <Link href="/suite/dev" className="underline underline-offset-4">
+          development suite
+        </Link>{" "}
+        ·{" "}
+        <Link href="/method" className="underline underline-offset-4">
+          how the numbers were kept honest
+        </Link>
+      </p>
     </div>
   );
 }

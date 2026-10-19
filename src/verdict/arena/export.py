@@ -9,11 +9,13 @@ tests it alone broke - while ``matrices.json`` keeps the rest for checking.
 
 from __future__ import annotations
 
+from dataclasses import asdict
 from datetime import UTC, datetime
 from typing import Any
 
+from verdict.arena.analysis import gate_stats
 from verdict.arena.examiners.exhibit import Exhibit
-from verdict.arena.judge import Judge, Standing
+from verdict.arena.judge import Judge, Standing, Verdict
 from verdict.arena.matrix import BASE, Matrix
 from verdict.arena.race import Attempt
 from verdict.arena.scoreboard import Scoreboard, TaskRow
@@ -42,11 +44,22 @@ def build_bundle(
     by_key = {(r.task_id, r.entrant): r for r in resolutions}
     code_of = {(e.task_id, e.author): e.test_code for e in exhibits}
     rows = {row.task_id: row for row in board.rows}
+    verdicts = {tid: judge(matrix) for tid, matrix in matrices.items()}
+    gate = gate_stats(
+        tuple(verdicts[t.task_id] for t in tasks if t.task_id in verdicts), resolutions
+    )
     return {
         "suite": suite,
         "policy": judge.policy.name,
         "generated_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "scoreboard": _scoreboard(board),
+        "gate": {
+            **asdict(gate),
+            "precision": round(gate.precision, 3),
+            "base_rate": round(gate.base_rate, 3),
+            "catch_rate": round(gate.catch_rate, 3),
+            "false_alarm_rate": round(gate.false_alarm_rate, 3),
+        },
         "entrants": [
             {"name": n, "vendor": vendor_of(n), **m} for n, m in sorted(entrant_meta.items())
         ],
@@ -60,7 +73,7 @@ def build_bundle(
                 oracles.get(task.task_id),
                 attempts.get(task.task_id, {}),
                 matrices.get(task.task_id),
-                judge,
+                verdicts.get(task.task_id),
                 by_key,
                 code_of,
                 rows.get(task.task_id),
@@ -92,12 +105,11 @@ def _task(
     oracle: Oracle | None,
     attempts: dict[str, Attempt],
     matrix: Matrix | None,
-    judge: Judge,
+    verdict: Verdict | None,
     resolutions: dict[tuple[str, str], Resolution],
     code_of: dict[tuple[str, str], str],
     row: TaskRow | None,
 ) -> dict[str, Any]:
-    verdict = judge(matrix) if matrix else None
     standings = {s.entrant: s for s in verdict.standings} if verdict else {}
     return {
         "task_id": task.task_id,
@@ -150,6 +162,8 @@ def _candidate(
             "breaks": list(standing.breaks[:10]),
             "breaks_total": len(standing.breaks),
             "lines_changed": standing.lines_changed,
+            "invariant_failures": standing.invariant_failures,
+            "approved": standing.approved,
         },
     }
 
