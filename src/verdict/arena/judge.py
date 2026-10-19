@@ -146,6 +146,14 @@ measured on the dev suite with the held-out suite's field of contestants
 approves at least half of the correct patches, and freeze the one with the
 highest gate precision; ties go to the most resolved selections."""
 
+FROZEN = "cross-executed"
+"""The policy the procedure above froze (2026-10-18), before any held-out
+result was computed. On dev, test-like field: 'cross' and 'cross-executed'
+tied on every measure - 95.7% of correct patches approved, precision 0.579,
+13 of 22 resolved selections. 'cross-executed' counts only evidence whose
+author executed it, which the held-out run supplies in full; the two differ
+only when one-shot prompted exhibits exist."""
+
 
 @dataclass(frozen=True, slots=True)
 class Standing:
