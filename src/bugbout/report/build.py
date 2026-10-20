@@ -139,6 +139,8 @@ def _selection(results: Results, resolved: dict[tuple[str, str], Resolution]) ->
             picks += 1
             judged_right += chosen in good
     best = max(by_agent.items(), key=lambda item: item[1], default=(None, 0))
+    if best[1] == 0:
+        best = (None, 0)  # nobody resolved anything: there is no best agent to name
     return Selection(
         tasks=len(results.tasks),
         best_agent=best[0],

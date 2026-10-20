@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 
 from rich.console import Console
@@ -122,3 +123,17 @@ def test_an_empty_bout_still_reports() -> None:
     empty = Results(results.project, "majority", {}, 0, [], [], [], [], {}, {})
     report = build_report(empty)
     assert report.agents == () and "No contestant has run yet." in render_markdown(report)
+
+
+def test_with_nothing_resolved_or_approved_the_text_says_so() -> None:
+    results = _results()
+    nobody = dataclasses.replace(
+        results,
+        resolutions=[dataclasses.replace(r, resolved=False) for r in results.resolutions],
+        verdicts=[
+            Verdict("t1", "majority", None, "nothing reaches 50%", (_standing("a", False),)),
+        ],
+    )
+    text = render_markdown(build_report(nobody))
+    assert "Best single agent: none resolved a bug" in text
+    assert "Nothing was approved; 1 of 1 wrong patches were rejected." in text

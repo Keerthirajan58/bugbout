@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from bugbout.report.model import Report
-from bugbout.report.text import auc, duration, percent, share
+from bugbout.report.text import auc, duration, gate_summary, share
 
 
 def render_markdown(report: Report) -> str:
@@ -52,7 +52,11 @@ def _selection(report: Report) -> str:
     s = report.selection
     if not s.tasks or not report.agents:
         return ""
-    best = f"{s.best_agent}, {share(s.best_agent_resolved, s.tasks)}" if s.best_agent else "none"
+    best = (
+        f"{s.best_agent}, {share(s.best_agent_resolved, s.tasks)}"
+        if s.best_agent
+        else "none resolved a bug"
+    )
     return (
         f"## Picking one patch per bug (judge policy: {report.policy})\n\n"
         f"- Best single agent: {best}\n"
@@ -75,9 +79,7 @@ def _gate(report: Report) -> str:
         f"| Approved | {g.approved_correct} | {g.approved_wrong} |\n"
         f"| Rejected | {g.rejected_correct} | {g.rejected_wrong} |\n"
         f"| Unverified | {g.unverified_correct} | {g.unverified_wrong} |\n\n"
-        f"Approvals were right {percent(g.precision)} of the time, against "
-        f"{percent(g.base_rate)} for merging every patch; {percent(g.catch_rate)} of wrong "
-        "patches were rejected.\n"
+        f"{_capitalised(gate_summary(g))}.\n"
     )
 
 
@@ -141,3 +143,7 @@ def _mining(report: Report) -> str:
 
 def _cell(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _capitalised(text: str) -> str:
+    return text[:1].upper() + text[1:]

@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.table import Table
 
 from bugbout.report.model import Report
-from bugbout.report.text import duration, percent, share
+from bugbout.report.text import duration, gate_summary, share
 
 
 def render_terminal(report: Report, console: Console) -> None:
@@ -18,8 +18,9 @@ def render_terminal(report: Report, console: Console) -> None:
         console.print("No contestant has run yet.")
         return
     agents = Table(title="Agents", title_justify="left")
-    for column in ("Agent", "Resolved", "Broke a test", "Wrong fix", "No fix", "Median time"):
-        agents.add_column(column, justify="left" if column == "Agent" else "right")
+    agents.add_column("Agent", overflow="fold")
+    for column in ("Resolved", "Broke a test", "Wrong fix", "No fix", "Median time"):
+        agents.add_column(column, justify="right")
     for a in report.agents:
         agents.add_row(
             a.name,
@@ -38,8 +39,4 @@ def render_terminal(report: Report, console: Console) -> None:
         f"any agent {s.any_agent_resolved}, of {s.tasks}."
     )
     if g.correct + g.wrong:
-        console.print(
-            f"As a merge gate: approvals right {percent(g.precision)} of the time "
-            f"(merging everything: {percent(g.base_rate)}); caught {percent(g.catch_rate)} "
-            "of wrong patches."
-        )
+        console.print(f"As a merge gate: {gate_summary(g)}.")

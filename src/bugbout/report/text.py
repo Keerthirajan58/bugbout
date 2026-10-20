@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from bugbout.report.model import Gate
+
 
 def percent(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.0%}"
@@ -20,3 +22,17 @@ def duration(seconds: float | None) -> str:
 
 def auc(value: float | None) -> str:
     return "n/a" if value is None else f"{value:.2f}"
+
+
+def gate_summary(gate: Gate) -> str:
+    """One sentence on how a merge gate under the judge's policy would have done."""
+    if gate.approved:
+        clauses = [
+            f"approvals were right {percent(gate.precision)} of the time, against "
+            f"{percent(gate.base_rate)} for merging every patch"
+        ]
+    else:
+        clauses = ["nothing was approved"]
+    if gate.wrong:
+        clauses.append(f"{gate.rejected_wrong} of {gate.wrong} wrong patches were rejected")
+    return "; ".join(clauses)
