@@ -21,6 +21,7 @@ from typing import Literal
 
 from bugbout.errors import EnvironmentSetupError
 from bugbout.log import get_logger
+from bugbout.sandbox import Confinement, NoSandbox, Sandbox
 
 log = get_logger(__name__)
 
@@ -69,11 +70,14 @@ class PythonProject:
 
 
 class TestEnvironment:
+    """Runs a checkout's tests - inside ``sandbox``, since agents wrote some of them."""
+
     __test__ = False  # not a pytest test class, despite the name
 
-    def __init__(self, root: Path, project: PythonProject) -> None:
+    def __init__(self, root: Path, project: PythonProject, sandbox: Sandbox | None = None) -> None:
         self.root = root
         self.project = project
+        self.sandbox = sandbox or NoSandbox()
 
     @property
     def python(self) -> Path:
@@ -160,9 +164,10 @@ class TestEnvironment:
             *([f"--junitxml={junit}", "-o", "junit_family=xunit1"] if junit else []),
             *selection,
         ]
+        writable = (tree, junit.parent) if junit else (tree,)
         try:
             proc = subprocess.run(  # noqa: S603 - our environment's python and pytest arguments
-                cmd,
+                self.sandbox.wrap(cmd, Confinement(writable=writable)),
                 cwd=tree,
                 env=self.env(tree),
                 capture_output=True,

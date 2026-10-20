@@ -16,17 +16,24 @@ from bugbout.workspace.environment import PythonProject, TestEnvironment
 from bugbout.workspace.repository import Repository
 
 if TYPE_CHECKING:
+    from bugbout.sandbox import Sandbox
     from bugbout.tasks.task import Task
 
 _COMPLETE = ".complete"
 
 
 class Workspace:
-    def __init__(self, root: Path, repository: Repository, project: PythonProject) -> None:
+    def __init__(
+        self,
+        root: Path,
+        repository: Repository,
+        project: PythonProject,
+        sandbox: Sandbox | None = None,
+    ) -> None:
         self.root = root
         self.repository = repository
         self.project = project
-        self.environment = TestEnvironment(root / "env", project)
+        self.environment = TestEnvironment(root / "env", project, sandbox)
         self._lock = threading.Lock()
 
     @property
