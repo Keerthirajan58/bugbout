@@ -1,58 +1,88 @@
-# Verdict
+# bugbout
 
-Verdict runs several AI coding agents on the same bug, has other agents write the
-tests a correct fix must pass, and decides which patch is safe to merge by running
-those tests - not by asking a model for its opinion.
+**Which coding agent actually fixes bugs in *your* codebase?**
+
+Public benchmarks tell you how coding agents do on someone else's code. bugbout tells
+you how they do on yours. It replays real bugs from your project's own history, lets
+agents race to fix them, and scores every patch with the tests your maintainers wrote
+alongside the real fix - tests no agent ever gets to see.
 
 ## Why
 
-Coding agents are fast, and they report success whether or not the fix is right.
-Reviewing every agent-written patch by hand doesn't scale, and asking another model
-to "review" it just adds a second opinion. Verdict replaces opinions with evidence:
+- **Your code, not a leaderboard's.** An agent that tops a benchmark can still stumble
+  on your conventions, your framework and your test suite. Measure it where you will
+  use it.
+- **Scored by your own tests.** Every task is a fix your team already shipped with a
+  new test, and that test decides whether an agent's patch really fixes the bug.
+- **Bring any agent.** Codex, Claude Code, Gemini CLI and mini-swe-agent work out of
+  the box, and any other agent with a command line takes a few lines of config - so
+  you can also compare models, including local ones.
+- **Cross-examination.** Agents' tests are run against each other's patches, so you
+  also learn whether an "agent jury" could pick, or gate, a patch on its own before you
+  trust one in your workflow.
+- **Safe to run.** Agents work in history-free checkouts, inside an OS sandbox, with
+  web access switched off.
 
-- **Pick the best patch** when several agents attempt the same issue.
-- **Gate a patch** before it merges: approve it, reject it, or flag that nothing
-  independent has verified it.
-- **See why** - every decision traces back to concrete tests and how they ran on
-  each patch.
+## Quickstart
+
+You need Python 3.12+, git, [uv](https://docs.astral.sh/uv/), and at least one coding
+agent CLI installed and logged in.
+
+```bash
+pip install git+https://github.com/Keerthirajan58/bugbout
+
+cd your-project
+bugbout init      # writes bugbout.toml from your layout and the agents you have
+bugbout doctor    # checks everything before any agent spends quota
+bugbout run       # mines tasks, races the agents, judges and scores
+bugbout report --format markdown
+```
+
+A bout is resumable: stop it at any point and run it again to carry on. Add an agent
+later and only that agent runs.
 
 ## How it works
 
-1. **Race** - coding agents (Codex CLI, mini-swe-agent, Gemini CLI) each fix the
-   issue in their own sandboxed checkout.
-2. **Examine** - examiner agents write the tests a fix must pass, from the issue
-   alone, without ever seeing a patch.
-3. **Cross-examine** - every test runs against every patch and the unfixed code.
-4. **Judge** - simple, explicit rules over the executed results approve, reject or
-   pick a patch.
+1. **Mine.** Fixes in your git history that name an issue and add a test become tasks.
+2. **Ground truth.** The maintainers' tests run before and after their fix; the tests
+   that flip from failing to passing define what "fixed" means.
+3. **Race.** Each agent gets the issue and a checkout of the code before the fix - no
+   git history, none of the fix's tests - and works inside a sandbox.
+4. **Cross-examine.** Every test the agents wrote runs against every patch.
+5. **Judge and score.** A policy picks one patch per bug from the executed evidence,
+   then the hidden tests score every patch and every pick.
 
-Agents run headlessly with clean configs, no web access and no git history to peek
-at; runs are journaled, so an interrupted race resumes without redoing work.
+More in [How it works](docs/how-it-works.md).
 
-## Getting started
+## Configuration
 
-Requires Python 3.12 and at least one coding-agent CLI.
+`bugbout init` writes a commented `bugbout.toml`. A minimal one looks like this:
 
-```bash
-python3.12 -m venv .venv && .venv/bin/pip install -e ".[dev,llm]"
-npm install -g @openai/codex && codex login
+```toml
+[project]
+source = "src/mypkg"
+tests = "tests"
 
-verdict arena --help
+[[contestants]]
+agent = "codex"
+
+[[contestants]]
+agent = "claude-code"
+model = "sonnet"
 ```
 
-A typical run over a suite of tasks:
+Every setting is described in [Configuration](docs/configuration.md); the built-in
+agents, sandboxing and adding your own agent are covered in [Agents](docs/agents.md).
 
-```bash
-verdict arena oracles --suite test
-verdict arena race -e codex -e codex-mini --suite test
-verdict arena examine -x codex-reproducer -x codex-specifier --suite test
-verdict arena cross --suite test
-verdict arena judge --suite test --policy cross-executed
+## From Python
+
+```python
+from bugbout import Bout, render_markdown
+
+report = Bout.load(".").run()
+print(render_markdown(report))
 ```
-
-The `dashboard/` folder is a static Next.js site for browsing every task, patch and
-test.
 
 ## License
 
-MIT
+[MIT](LICENSE)
