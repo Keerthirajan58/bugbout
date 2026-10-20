@@ -32,11 +32,12 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Linters are pinned: their verdicts change between releases, and CI must agree with your machine.
 dev = [
-    "mypy>=1.14",
+    "mypy==2.4.0",
     "pytest>=8.3",
     "pytest-cov>=6.0",
-    "ruff>=0.9",
+    "ruff==0.17.1",
 ]
 
 [project.scripts]

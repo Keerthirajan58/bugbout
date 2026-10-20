@@ -128,7 +128,7 @@ from bugbout import CodingAgent, Invocation, Session
 
 
 class MyAgent(CodingAgent):
-    harness = "my-agent"     # the default name prefix
+    harness = "my-agent"  # the default name prefix
     executable = "my-agent"  # what `bugbout doctor` looks for
 
     def invocation(self, session: Session) -> Invocation:
