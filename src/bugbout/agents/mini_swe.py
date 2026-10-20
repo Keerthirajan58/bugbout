@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Unpack, override
 
 from bugbout.agents.base import CodingAgent, Identity, Invocation, Session
+from bugbout.errors import ConfigError
 from bugbout.sandbox import Confinement
 
 PLUGINS = Path(__file__).resolve().parent / "plugins"
@@ -39,6 +40,8 @@ class MiniSweAgent(CodingAgent):
         **identity: Unpack[Identity],
     ) -> None:
         """``model`` is a LiteLLM model name, such as ``ollama/qwen3-coder:30b``."""
+        if not model:
+            raise ConfigError("mini-swe-agent needs a model: a LiteLLM name such as ollama/qwen3")
         provider = model.split("/", 1)[0] if "/" in model else self.harness
         identity.setdefault("quota", provider)
         super().__init__(model, **identity)

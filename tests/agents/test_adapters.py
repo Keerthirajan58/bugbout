@@ -10,6 +10,7 @@ import pytest
 
 from bugbout.agents import ClaudeCode, Codex, CommandAgent, GeminiCli, MiniSweAgent, Session
 from bugbout.agents.mini_swe import PLUGINS, SANDBOX_PREFIX_ENV
+from bugbout.errors import ConfigError
 from bugbout.sandbox import Confinement, Sandbox
 
 
@@ -67,6 +68,11 @@ class TestCodex:
         )
         assert 'model_reasoning_effort="high"' in argv
         assert _option(argv, "--local-provider") == "ollama" and "--oss" in argv
+
+    def test_without_a_model_the_cli_s_default_is_used(self, session: Session) -> None:
+        agent = Codex()
+        assert "--model" not in agent.invocation(session).argv
+        assert (agent.name, agent.vendor) == ("codex", "openai")
 
     def test_identity_defaults(self) -> None:
         agent = Codex("gpt-5.1-codex")
@@ -143,6 +149,10 @@ class TestMiniSweAgent:
         argv = MiniSweAgent("ollama/qwen3", text_actions=True).invocation(session).argv
         assert _option(argv, "--model-class") == "litellm_textbased"
         assert "mini_textbased.yaml" in argv
+
+    def test_a_model_is_required(self) -> None:
+        with pytest.raises(ConfigError, match="needs a model"):
+            MiniSweAgent("")
 
     def test_the_quota_is_the_provider(self) -> None:
         assert MiniSweAgent("mistral/codestral-latest").quota == "mistral"

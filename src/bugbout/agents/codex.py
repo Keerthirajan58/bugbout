@@ -41,7 +41,7 @@ class Codex(CodingAgent):
 
     def __init__(
         self,
-        model: str,
+        model: str = "",
         *,
         reasoning_effort: str | None = None,
         local_provider: str | None = None,
@@ -70,7 +70,7 @@ class Codex(CodingAgent):
             "--skip-git-repo-check",
             "--sandbox", "workspace-write",
             "--cd", str(session.workdir),
-            "--model", self.model,
+            *(["--model", self.model] if self.model else []),
             *effort,
             *local,
             "-c", 'web_search="disabled"',

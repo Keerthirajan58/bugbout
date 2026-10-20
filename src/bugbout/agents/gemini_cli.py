@@ -39,7 +39,7 @@ class GeminiCli(CodingAgent):
         argv = [
             self.command(),
             "--prompt", session.prompt,
-            "--model", self.model,
+            *(["--model", self.model] if self.model else []),
             "--approval-mode", "yolo",
             "--output-format", "stream-json",
             "--skip-trust",

@@ -31,9 +31,9 @@ class ClaudeCode(CodingAgent):
     executable = "claude"
 
     def __init__(
-        self, model: str, *, effort: str | None = None, **identity: Unpack[Identity]
+        self, model: str = "", *, effort: str | None = None, **identity: Unpack[Identity]
     ) -> None:
-        """``model`` is a full model name or an alias such as ``sonnet``."""
+        """``model`` is a full model name or an alias such as ``sonnet``; empty for the default."""
         identity.setdefault("vendor", "anthropic")  # an alias names no vendor
         super().__init__(model, **identity)
         self.effort = effort
@@ -45,7 +45,7 @@ class ClaudeCode(CodingAgent):
             "--print",
             "--output-format", "stream-json",
             "--verbose",
-            "--model", self.model,
+            *(["--model", self.model] if self.model else []),
             *(["--effort", self.effort] if self.effort else []),
             "--safe-mode",
             "--no-session-persistence",

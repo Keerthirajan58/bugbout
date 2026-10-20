@@ -105,16 +105,17 @@ class CodingAgent(ABC):
 
     def __init__(
         self,
-        model: str,
+        model: str = "",
         *,
         name: str | None = None,
         vendor: str | None = None,
         quota: str | None = None,
     ) -> None:
         self.model = model
-        self.name = name or f"{self.harness}/{model}"
+        """The model to run; empty for the CLI's own default."""
+        self.name = name or (f"{self.harness}/{model}" if model else self.harness)
         """Unique within a bout; used in reports and paths."""
-        self.vendor = vendor or vendor_of(model)
+        self.vendor = vendor or vendor_of(model or self.harness)
         """Who made the model, so the judge can keep evidence independent."""
         self.quota = quota or self.harness
         """The rate limit this agent draws on. Agents sharing one run in a shared lane."""
@@ -140,7 +141,7 @@ class CodingAgent(ABC):
         return {
             "harness": self.harness,
             "version": version_of(self.command()),
-            "model": self.model,
+            "model": self.model or "the CLI's default",
             "vendor": self.vendor,
         }
 
