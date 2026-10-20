@@ -127,6 +127,11 @@ class TestGeminiCli:
         assert confinement.network and session.workdir in confinement.writable
         assert Path.home() / ".gemini" in confinement.writable
 
+    def test_an_api_error_becomes_the_summary(self, tmp_path: Path) -> None:
+        event = {"type": "result", "error": {"message": "model retired"}, "stats": {"tokens": 0}}
+        (tmp_path / "stdout.log").write_text(json.dumps(event))
+        assert GeminiCli("gemini-x").parse(tmp_path) == ("model retired", {"tokens": 0})
+
     def test_web_tools_are_excluded_in_workspace_settings(self, tmp_path: Path) -> None:
         GeminiCli("gemini-2.5-pro").prepare(tmp_path)
         settings = json.loads((tmp_path / ".gemini" / "settings.json").read_text())

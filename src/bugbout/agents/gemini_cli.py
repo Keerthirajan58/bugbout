@@ -56,9 +56,12 @@ class GeminiCli(CodingAgent):
         for event in read_jsonl(logdir / "stdout.log"):
             if event.get("type") == "message" and event.get("role") == "assistant":
                 parts.append(str(event.get("content", "")))
-            stats = event.get("stats") if event.get("type") == "result" else None
-            if isinstance(stats, dict):
+            if event.get("type") != "result":
+                continue
+            if isinstance(stats := event.get("stats"), dict):
                 usage = {k: v for k, v in stats.items() if isinstance(v, int)}
+            if isinstance(error := event.get("error"), dict) and not parts:
+                parts.append(str(error.get("message", "")))  # why it stopped, as Gemini put it
         return "".join(parts).strip()[-4000:], usage
 
     @override

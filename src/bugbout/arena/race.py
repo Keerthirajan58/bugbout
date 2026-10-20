@@ -172,12 +172,13 @@ class Race:
         patch = Patch.between(self.workspace.pristine(task), repo)
         status = _status(run, patch, folder / "logs")
         log.info(
-            "%s finished %s on %s: %s in %.0fs",
+            "%s finished %s on %s: %s in %.0fs%s",
             agent.name,
             self.assignment.name,
             task.task_id,
             status,
             run.seconds,
+            "" if status == "ok" else f" ({run.error}; logs in {folder / 'logs'})",
         )
         return Attempt(
             task.task_id, agent.name, self.assignment.name, status, run, patch, agent.vendor
