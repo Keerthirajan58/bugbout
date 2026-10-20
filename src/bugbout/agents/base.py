@@ -24,6 +24,7 @@ import os
 import shutil
 import signal
 import subprocess
+import threading
 import time
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, field
@@ -198,6 +199,8 @@ def _execute(
             )
         except OSError as exc:
             return None, False, f"could not start {invocation.argv[0]}: {exc}"
+        with _RUNNING_LOCK:
+            _RUNNING.add(process)
         try:
             process.communicate(input=invocation.stdin, timeout=timeout)
         except subprocess.TimeoutExpired:
@@ -206,8 +209,27 @@ def _execute(
         except BaseException:
             _kill(process)  # interrupted: never leave an agent running unattended
             raise
+        finally:
+            with _RUNNING_LOCK:
+                _RUNNING.discard(process)
     code = process.returncode
     return code, False, "" if code == 0 else f"exit code {code}"
+
+
+_RUNNING: set[subprocess.Popen[str]] = set()
+_RUNNING_LOCK = threading.Lock()
+
+
+def stop_all() -> None:
+    """Kill every agent still running, with everything it started.
+
+    Agents run in sessions of their own, so an interrupt in the terminal does
+    not reach them; whoever handles the interrupt calls this.
+    """
+    with _RUNNING_LOCK:
+        running = list(_RUNNING)
+    for process in running:
+        _kill(process)
 
 
 def _kill(process: subprocess.Popen[str]) -> None:

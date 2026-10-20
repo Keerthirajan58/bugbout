@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from bugbout.errors import PatchError
+from bugbout.naming import slug
 from bugbout.tasks.task import Task
 from bugbout.workspace.junit import read_junit
 from bugbout.workspace.patch import Patch
@@ -142,7 +143,7 @@ class Referee:
         fix = patch.only(under=self.workspace.project.test_root, keep=False)
         if fix.empty:
             return Resolution.unresolved(task.task_id, entrant, oracle, "no fix produced")
-        tree = self._tree(task, f"score-{_safe(entrant)}", task.base_commit)
+        tree = self._tree(task, f"score-{slug(entrant)}", task.base_commit)
         try:
             try:
                 fix.apply(tree)
@@ -184,7 +185,3 @@ class Referee:
         outcomes = read_junit(junit)
         junit.unlink(missing_ok=True)
         return outcomes
-
-
-def _safe(name: str) -> str:
-    return "".join(c if c.isalnum() or c in "-_." else "_" for c in name)

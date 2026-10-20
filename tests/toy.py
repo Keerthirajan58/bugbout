@@ -13,6 +13,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from bugbout.agents.command import CommandAgent
 from bugbout.tasks.issues import Issue
 from bugbout.workspace.environment import PythonProject
 from bugbout.workspace.patch import Patch
@@ -28,6 +29,9 @@ TESTS_AFTER = (
     "def test_add():\n    assert add(2, 3) == 5\n"
 )
 ISSUE = Issue(12, "add() subtracts", "Calling add(2, 3) returns -1 instead of the expected 5.")
+REGRESSION = "from toy.core import add\n\n\ndef test_add():\n    assert add(2, 3) == 5\n"
+# A test that passes on the buggy code - it reproduces nothing.
+VACUOUS = "from toy.core import mul\n\n\ndef test_mul_again():\n    assert mul(1, 1) == 1\n"
 
 
 class GitRepo:
@@ -103,3 +107,32 @@ class StaticIssues:
     def fetch(self, number: int) -> Issue | None:
         self.requested.append(number)
         return self.issues.get(number)
+
+
+def script_agent(
+    name: str,
+    files: dict[str, str],
+    *,
+    vendor: str | None = None,
+    quota: str | None = None,
+    exit_code: int = 0,
+    tally: Path | None = None,
+) -> CommandAgent:
+    """An agent that writes ``files`` into its checkout and exits - no model involved.
+
+    Each run appends a line to ``tally``, if given, so tests can count runs.
+    """
+    lines = ["import pathlib, sys", "sys.stdin.read()"]
+    if tally is not None:
+        lines.append(f"with open({str(tally)!r}, 'a') as out: out.write('run\\n')")
+    for path, text in files.items():
+        lines.append(f"pathlib.Path({path!r}).parent.mkdir(parents=True, exist_ok=True)")
+        lines.append(f"pathlib.Path({path!r}).write_text({text!r})")
+    lines.append(f"sys.exit({exit_code})")
+    return CommandAgent(
+        [sys.executable, "-c", "\n".join(lines)],
+        name=name,
+        vendor=vendor,
+        quota=quota,
+        sandboxed=False,
+    )

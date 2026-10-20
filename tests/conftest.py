@@ -7,7 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from tests.toy import Toy, build_toy
+from bugbout.tasks.mining import Miner, MiningRules
+from bugbout.tasks.task import Task
+from tests.toy import ISSUE, StaticIssues, Toy, build_toy
 from verdict.llm.base import LLMRequest, LLMResponse, ProviderError
 
 
@@ -38,3 +40,11 @@ class FakeProvider:
 def toy(tmp_path: Path) -> Toy:
     """The toy project: one real bug, fixed in a later commit with a new test."""
     return build_toy(tmp_path / "toy")
+
+
+@pytest.fixture
+def toy_task(toy: Toy) -> Task:
+    """The toy project's one task, mined from its history."""
+    rules = MiningRules(source_root="src/toy", test_root="tests")
+    [task], _ = Miner(toy.repository, StaticIssues(ISSUE), rules).mine()
+    return task

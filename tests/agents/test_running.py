@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
 from bugbout.agents import AgentRun, CommandAgent
+from bugbout.agents.base import stop_all
 from bugbout.sandbox import NoSandbox
 
 
@@ -68,3 +70,17 @@ def _gone(pid: int, wait: float = 10.0) -> bool:
 def test_the_run_record_round_trips() -> None:
     run = AgentRun("a", 0, False, 1.5, "done", {"tokens": 3})
     assert AgentRun.from_dict(run.to_dict()) == run
+
+
+def test_stop_all_ends_an_agent_that_is_still_running(tmp_path: Path) -> None:
+    runs: list[AgentRun] = []
+    worker = threading.Thread(
+        target=lambda: runs.append(_run(_agent("import time; time.sleep(60)"), tmp_path))
+    )
+    worker.start()
+    deadline = time.monotonic() + 10
+    while worker.is_alive() and time.monotonic() < deadline:
+        stop_all()
+        worker.join(timeout=0.2)
+    assert not worker.is_alive()
+    assert runs[0].exit_code is not None and not runs[0].ok

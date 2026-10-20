@@ -55,6 +55,8 @@ class Workspace:
         with self._lock:
             if not (path / _COMPLETE).exists():
                 self.repository.archive(task.base_commit, path)
+                # A project that committed its bugbout results must not show them to agents.
+                shutil.rmtree(path / ".bugbout", ignore_errors=True)
                 (path / _COMPLETE).touch()
         return path
 
