@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
+import pytest
+
+from tests.toy import Toy, build_toy
 from verdict.llm.base import LLMRequest, LLMResponse, ProviderError
 
 
@@ -28,3 +32,9 @@ class FakeProvider:
             raise ProviderError("fake provider has no scripted responses left")
         text = self.responses.pop(0)
         return LLMResponse(text=text, provider=self.name, model=self.model)
+
+
+@pytest.fixture
+def toy(tmp_path: Path) -> Toy:
+    """The toy project: one real bug, fixed in a later commit with a new test."""
+    return build_toy(tmp_path / "toy")
