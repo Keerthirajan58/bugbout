@@ -13,6 +13,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from bugbout.tasks.issues import Issue
 from bugbout.workspace.environment import PythonProject
 from bugbout.workspace.patch import Patch
 from bugbout.workspace.repository import Repository
@@ -26,6 +27,7 @@ TESTS_AFTER = (
     "def test_mul():\n    assert mul(2, 3) == 6\n\n\n"
     "def test_add():\n    assert add(2, 3) == 5\n"
 )
+ISSUE = Issue(12, "add() subtracts", "Calling add(2, 3) returns -1 instead of the expected 5.")
 
 
 class GitRepo:
@@ -89,3 +91,15 @@ def patch_to(tmp: Path, core: str) -> Patch:
         (tmp / side / "src" / "toy").mkdir(parents=True)
         (tmp / side / "src" / "toy" / "core.py").write_text(text)
     return Patch.between(tmp / "before", tmp / "after")
+
+
+class StaticIssues:
+    """An issue tracker that serves issues from memory."""
+
+    def __init__(self, *issues: Issue) -> None:
+        self.issues = {issue.number: issue for issue in issues}
+        self.requested: list[int] = []
+
+    def fetch(self, number: int) -> Issue | None:
+        self.requested.append(number)
+        return self.issues.get(number)
