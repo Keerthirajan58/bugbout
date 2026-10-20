@@ -55,3 +55,6 @@ data/
 dashboard/data/
 Precedent_v2_Fix_Plan.md
 precedent-build-brief.md
+
+# The study dashboard lives outside the package
+dashboard/
