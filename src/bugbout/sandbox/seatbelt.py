@@ -8,8 +8,8 @@ using the network.
 from __future__ import annotations
 
 import functools
+import platform
 import subprocess
-import sys
 from pathlib import Path
 from typing import override
 
@@ -26,8 +26,12 @@ class Seatbelt(Sandbox):
 
     @classmethod
     @override
-    def available(cls) -> bool:
-        return sys.platform == "darwin" and _probe()
+    def problem(cls) -> str | None:
+        if platform.system() != "Darwin":
+            return "seatbelt only runs on macOS"
+        if not _probe():
+            return "sandbox-exec cannot start a sandbox here; is bugbout itself running in one?"
+        return None
 
     @override
     def prefix(self, confinement: Confinement) -> list[str]:

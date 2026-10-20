@@ -28,7 +28,12 @@ jobs:
 
       - name: Install bubblewrap
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+        run: |
+          sudo apt-get update && sudo apt-get install -y bubblewrap
+          # Recent Ubuntu restricts the unprivileged user namespaces bubblewrap needs.
+          if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
 
       - name: Install
         run: |
@@ -47,3 +52,5 @@ jobs:
 
       - name: Tests
         run: pytest -q
+        env:
+          BUGBOUT_REQUIRE_NATIVE_SANDBOX: "1"  # the real sandbox tests must run, never skip

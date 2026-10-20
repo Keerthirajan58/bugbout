@@ -8,9 +8,9 @@ may not use the network gets a network namespace of its own.
 from __future__ import annotations
 
 import functools
+import platform
 import shutil
 import subprocess
-import sys
 from typing import override
 
 from bugbout.sandbox.base import Confinement, Sandbox
@@ -23,8 +23,12 @@ class Bubblewrap(Sandbox):
 
     @classmethod
     @override
-    def available(cls) -> bool:
-        return sys.platform.startswith("linux") and _probe()
+    def problem(cls) -> str | None:
+        if platform.system() != "Linux":
+            return "bubblewrap only runs on Linux"
+        if shutil.which("bwrap") is None:
+            return "bubblewrap is not installed (e.g. `apt install bubblewrap`)"
+        return _probe()
 
     @override
     def prefix(self, confinement: Confinement) -> list[str]:
@@ -47,18 +51,30 @@ class Bubblewrap(Sandbox):
 
 
 @functools.cache
-def _probe() -> bool:
-    """``bwrap`` is installed and allowed to create namespaces here."""
-    bwrap = shutil.which("bwrap")
-    if bwrap is None:
-        return False
+def _probe() -> str | None:
+    """Why ``bwrap`` cannot create a sandbox here, or ``None`` if it can."""
+    bwrap = shutil.which("bwrap") or "bwrap"
     try:
         completed = subprocess.run(  # noqa: S603 - the resolved bwrap binary, literal arguments
             [bwrap, "--ro-bind", "/", "/", "--unshare-net", "true"],
             capture_output=True,
+            text=True,
             timeout=30,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return completed.returncode == 0
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return f"bubblewrap could not run: {exc}"
+    if completed.returncode == 0:
+        return None
+    return explain(completed.stderr.strip())
+
+
+def explain(error: str) -> str:
+    """bubblewrap's own error, with the usual cause when it is a permission problem."""
+    reason = f"bubblewrap cannot create a sandbox: {error or 'unknown error'}"
+    if "ermission denied" in error or "not permitted" in error:
+        reason += (
+            "; on Ubuntu 24.04 and later, AppArmor restricts the user namespaces it needs "
+            "(see `sysctl kernel.apparmor_restrict_unprivileged_userns`)"
+        )
+    return reason

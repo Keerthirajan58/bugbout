@@ -30,8 +30,12 @@ class Sandbox(ABC):
 
     @classmethod
     @abstractmethod
+    def problem(cls) -> str | None:
+        """Why this backend cannot run on this machine; ``None`` when it can."""
+
+    @classmethod
     def available(cls) -> bool:
-        """Whether this backend works on this machine."""
+        return cls.problem() is None
 
     @abstractmethod
     def prefix(self, confinement: Confinement) -> list[str]:
@@ -48,8 +52,8 @@ class NoSandbox(Sandbox):
 
     @classmethod
     @override
-    def available(cls) -> bool:
-        return True
+    def problem(cls) -> str | None:
+        return None
 
     @override
     def prefix(self, confinement: Confinement) -> list[str]:

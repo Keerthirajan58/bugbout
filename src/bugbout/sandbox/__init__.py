@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import platform
+
 from bugbout.errors import ConfigError, SandboxUnavailableError
 from bugbout.sandbox.base import Confinement, NoSandbox, Sandbox
 from bugbout.sandbox.bubblewrap import Bubblewrap
@@ -14,13 +16,13 @@ BACKENDS: dict[str, type[Sandbox]] = {
 
 def detect() -> Sandbox:
     """This platform's sandbox: seatbelt on macOS, bubblewrap on Linux."""
-    for backend in (Seatbelt, Bubblewrap):
-        if backend.available():
-            return backend()
+    native = Seatbelt if platform.system() == "Darwin" else Bubblewrap
+    problem = native.problem()
+    if problem is None:
+        return native()
     raise SandboxUnavailableError(
-        "No sandbox is available on this machine. On Linux, install bubblewrap "
-        '(e.g. `apt install bubblewrap`); or set sandbox = "none" in bugbout.toml '
-        "to let agents run commands unconfined."
+        f"no sandbox is available: {problem}. To run agents' commands unconfined "
+        'instead, set sandbox = "none" under [run] in bugbout.toml'
     )
 
 
@@ -32,8 +34,8 @@ def get_sandbox(name: str = "auto") -> Sandbox:
     if backend is None:
         choices = ", ".join(["auto", *BACKENDS])
         raise ConfigError(f"unknown sandbox {name!r}; choose one of: {choices}")
-    if not backend.available():
-        raise SandboxUnavailableError(f"the {name} sandbox is not available on this machine")
+    if (problem := backend.problem()) is not None:
+        raise SandboxUnavailableError(problem)
     return backend()
 
 

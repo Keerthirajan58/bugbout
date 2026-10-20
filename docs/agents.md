@@ -102,7 +102,9 @@ only in the directories it was given and the system's temporary directories.
   write only in their own checkout.
 
 `sandbox = "none"` runs everything unconfined. `bugbout doctor` reports which sandbox
-is in use.
+is in use, or why none can start. On Ubuntu 24.04 and later, AppArmor restricts the
+unprivileged user namespaces bubblewrap needs; allow them for `bwrap` with an AppArmor
+profile, or system-wide with `sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0`.
 
 ## Quotas and lanes
 

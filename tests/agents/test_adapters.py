@@ -24,8 +24,8 @@ class RecordingSandbox(Sandbox):
 
     @classmethod
     @override
-    def available(cls) -> bool:
-        return True
+    def problem(cls) -> str | None:
+        return None
 
     @override
     def prefix(self, confinement: Confinement) -> list[str]:

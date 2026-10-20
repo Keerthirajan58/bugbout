@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import os
+import platform
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
-from bugbout.errors import ConfigError
+from bugbout.errors import ConfigError, SandboxUnavailableError
 from bugbout.sandbox import (
     Bubblewrap,
     Confinement,
@@ -18,6 +20,7 @@ from bugbout.sandbox import (
     detect,
     get_sandbox,
 )
+from bugbout.sandbox.bubblewrap import explain
 from bugbout.sandbox.seatbelt import profile
 
 NATIVE: list[type[Sandbox]] = [b for b in (Seatbelt, Bubblewrap) if b.available()]
@@ -98,3 +101,28 @@ class TestSelection:
     @pytest.mark.skipif(not NATIVE, reason="no native sandbox on this machine")
     def test_auto_picks_the_platform_s_sandbox(self) -> None:
         assert not isinstance(detect(), NoSandbox)
+
+
+class TestProblems:
+    def test_a_backend_for_another_platform_says_so(self) -> None:
+        other = Bubblewrap if platform.system() == "Darwin" else Seatbelt
+        assert other.problem() in {"bubblewrap only runs on Linux", "seatbelt only runs on macOS"}
+
+    def test_a_permission_error_points_at_apparmor(self) -> None:
+        reason = explain("bwrap: setting up uid map: Permission denied")
+        assert reason.startswith("bubblewrap cannot create a sandbox: bwrap: setting up uid map")
+        assert "apparmor_restrict_unprivileged_userns" in reason
+
+    def test_an_unavailable_sandbox_explains_itself(self) -> None:
+        name = "seatbelt" if platform.system() != "Darwin" else "bubblewrap"
+        with pytest.raises(SandboxUnavailableError, match="only runs on"):
+            get_sandbox(name)
+
+
+@pytest.mark.skipif(
+    not os.environ.get("BUGBOUT_REQUIRE_NATIVE_SANDBOX"), reason="only where a sandbox is required"
+)
+def test_this_machine_has_a_working_native_sandbox() -> None:
+    """CI sets the variable, so the real sandbox tests can never be skipped there unnoticed."""
+    native = Seatbelt if platform.system() == "Darwin" else Bubblewrap
+    assert native.problem() is None, native.problem()
