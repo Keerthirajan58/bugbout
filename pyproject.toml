@@ -100,7 +100,7 @@ ignore = [
 python_version = "3.12"
 strict = true
 warn_unreachable = true
-files = ["src/verdict"]
+files = ["src/verdict", "src/bugbout"]
 
 [[tool.mypy.overrides]]
 module = ["rank_bm25.*", "fastembed.*", "pgvector.*", "groq.*", "google.genai.*", "cosmic_ray.*"]
