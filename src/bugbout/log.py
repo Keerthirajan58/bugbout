@@ -15,15 +15,15 @@ console = Console(stderr=True)
 
 
 def configure_logging(verbose: bool = False) -> None:
-    """Install a Rich handler on the root logger. Safe to call more than once."""
-    root = logging.getLogger()
-    root.handlers.clear()
-    root.setLevel(logging.DEBUG if verbose else logging.INFO)
-    root.addHandler(
-        RichHandler(console=console, rich_tracebacks=True, show_path=verbose, show_time=True)
-    )
-    for noisy in ("httpx", "httpcore", "urllib3"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+    """Show bugbout's own messages through Rich; other libraries' logging is left alone.
+
+    Safe to call more than once.
+    """
+    logger = logging.getLogger("bugbout")
+    logger.handlers.clear()
+    logger.setLevel(logging.DEBUG if verbose else logging.INFO)
+    logger.addHandler(RichHandler(console=console, show_path=verbose, show_time=True))
+    logger.propagate = False
 
 
 def get_logger(name: str) -> logging.Logger:

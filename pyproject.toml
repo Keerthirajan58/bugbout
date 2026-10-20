@@ -3,68 +3,58 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "verdict"
+name = "bugbout"
 dynamic = ["version"]
-description = "Race coding agents on real bugs, cross-examine their patches, and judge by execution."
+description = "Find out which coding agent actually fixes bugs in your codebase."
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Keerthirajan58", email = "keerthirajan19122001@gmail.com" }]
-keywords = ["mutation-testing", "rag", "llm-agents", "code-review", "regression-testing"]
+keywords = ["coding-agents", "llm", "evaluation", "benchmark", "swe-bench", "testing"]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
     "Intended Audience :: Developers",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Testing",
+    "Typing :: Typed",
 ]
-
 dependencies = [
-    # CLI + presentation
-    "typer>=0.15",
-    "rich>=13.9",
-    # config + validation
     "pydantic>=2.10",
-    "pydantic-settings>=2.7",
-    # transport + resilience
-    "httpx>=0.28",
-    "tenacity>=9.0",
-    # mutation engine: standard operator taxonomy + format-preserving parso AST
-    "cosmic-ray>=8.7",
-    # lexical retrieval; imported by the CLI, so required rather than optional
-    "numpy>=1.26",
-    "rank-bm25>=0.2.2",
+    "rich>=13.9",
+    "typer>=0.15",
 ]
 
 [project.optional-dependencies]
-# Phase 2: agent pair. Providers are optional so Phase 0/1 install stays light.
-llm = [
-    "google-genai>=1.0",
-    "groq>=0.13",
-]
-# Phase 3: knowledge base + hybrid retrieval.
-rag = [
-    "fastembed>=0.5",
-    "psycopg[binary]>=3.2",
-    "pgvector>=0.3.6",
-]
 dev = [
-    "ruff>=0.9",
     "mypy>=1.14",
     "pytest>=8.3",
     "pytest-cov>=6.0",
+    "ruff>=0.9",
 ]
 
 [project.scripts]
-verdict = "verdict.cli:app"
+bugbout = "bugbout.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/Keerthirajan58/verdict"
+Homepage = "https://github.com/Keerthirajan58/bugbout"
+Issues = "https://github.com/Keerthirajan58/bugbout/issues"
 
 [tool.hatch.version]
-path = "src/verdict/__about__.py"
+path = "src/bugbout/__about__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/verdict"]
+packages = ["src/bugbout"]
+
+[tool.hatch.build.targets.sdist]
+# An explicit list, so nothing that merely sits in the working tree is ever published.
+only-include = ["src/bugbout", "tests", "docs", "CHANGELOG.md"]
 
 [tool.ruff]
 line-length = 100
@@ -74,46 +64,25 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RET", "ARG", "PTH", "RUF", "S"]
 ignore = [
-    "E501",    # line length is enforced by the formatter, not the linter
-    "B008",    # typer's Option()/Argument() defaults are the documented idiom
+    "E501",  # line length is the formatter's job
+    "B008",  # typer's Option() and Argument() defaults are the documented idiom
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# This module exists to run subprocesses. Every argv is built from the pinned
-# target registry or from literals, never from user input, and shell=False
-# throughout - so S603's "untrusted input" premise does not apply here.
-"src/verdict/targets/workspace.py" = ["S603"]
-# Task mining reads the local clone through git and fetches issue text over
-# https. Every argv is a literal plus a commit range, and the URL is built from
-# a literal prefix - neither "untrusted input" nor "unexpected scheme" applies.
-"src/verdict/review/tasks.py" = ["S603", "S607", "S310"]
-# The bench runs git, tar and pytest against paths it created itself, with
-# shell=False throughout. The executables are resolved from PATH deliberately:
-# the point is to use the same toolchain the developer has.
-"src/verdict/review/bench.py" = ["S603", "S607"]
-# Agent adapters implement one hook signature, so not every adapter uses every
-# argument it is given.
-"src/verdict/arena/agents/*.py" = ["ARG002"]
-"tests/*" = ["ARG", "S101", "S105", "S106", "S603", "S607"]  # unused fixtures, bare asserts, fake credentials and git fixtures are the pytest idiom
+# Unused fixture arguments, bare asserts, and subprocesses that drive git and pytest
+# are how the tests work.
+"tests/**" = ["ARG", "S101", "S603", "S607"]
 
 [tool.mypy]
 python_version = "3.12"
 strict = true
 warn_unreachable = true
-files = ["src/verdict", "src/bugbout"]
-
-[[tool.mypy.overrides]]
-module = ["rank_bm25.*", "fastembed.*", "pgvector.*", "groq.*", "google.genai.*", "cosmic_ray.*"]
-ignore_missing_imports = true
+files = ["src/bugbout", "tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
-markers = [
-    "slow: exercises a real target repo checkout; excluded from the fast CI lane",
-    "network: requires network access",
-]
 
 [tool.coverage.run]
-source = ["src/verdict"]
+source = ["src/bugbout"]
 branch = true

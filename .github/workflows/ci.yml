@@ -11,15 +11,24 @@ concurrency:
 
 jobs:
   checks:
-    name: lint, types, tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+    name: lint, types, tests (${{ matrix.os }}, Python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v7
 
       - uses: astral-sh/setup-uv@v10.3.0
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
+
+      - name: Install bubblewrap
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
 
       - name: Install
         run: |
