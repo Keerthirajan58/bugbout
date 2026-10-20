@@ -88,6 +88,8 @@ def doctor(config: ConfigOption = Path()) -> None:
     with _reported():
         checks = diagnose(Project.load(config))
     table = Table(show_header=False, box=None)
+    for _ in range(3):
+        table.add_column(overflow="fold")
     for check in checks:
         mark = "[green]✓[/]" if check.ok else "[red]✗[/]" if check.required else "[yellow]![/]"
         table.add_row(mark, check.name, check.detail)

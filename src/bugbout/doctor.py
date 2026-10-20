@@ -27,12 +27,13 @@ def diagnose(project: Project) -> list[Check]:
         checks.append(_tool("uv", "builds the test environment: https://docs.astral.sh/uv/"))
     checks += [_sandbox(project), _repository(project), _github()]
     try:
-        agents = [*project.contestants(), *(e.agent for e in project.examiners())]
+        contestants, examiners = project.contestants(), project.examiners()
     except BugboutError as exc:
         return [*checks, Check("agents", False, str(exc))]
-    if not agents:
+    if not contestants:
         checks.append(Check("agents", False, "no contestants configured"))
-    return checks + [_agent(agent) for agent in agents]
+    checks += [_agent(agent.name, agent) for agent in contestants]
+    return checks + [_agent(examiner.author, examiner.agent) for examiner in examiners]
 
 
 def _tool(name: str, purpose: str) -> Check:
@@ -74,9 +75,9 @@ def _github() -> Check:
     )
 
 
-def _agent(agent: CodingAgent) -> Check:
+def _agent(label: str, agent: CodingAgent) -> Check:
     try:
         agent.check()
     except BugboutError as exc:
-        return Check(agent.name, False, str(exc))
-    return Check(agent.name, True, version_of(agent.command()))
+        return Check(label, False, str(exc))
+    return Check(label, True, version_of(agent.command()))
