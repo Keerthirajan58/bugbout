@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import _thread
 import sys
+import threading
+import time
 from pathlib import Path
 
 import pytest
@@ -13,6 +16,7 @@ from bugbout.arena.briefs import ASSIGNMENTS, FIX
 from bugbout.arena.race import Attempt, Race
 from bugbout.sandbox import NoSandbox
 from bugbout.tasks.task import Task
+from tests.processes import gone
 from tests.toy import FIXED, REGRESSION, Toy, script_agent
 
 FIX_FILES = {"src/toy/core.py": FIXED, "tests/test_issue_regression.py": REGRESSION}
@@ -126,3 +130,26 @@ def test_every_agent_attempts_every_task_across_lanes(
 def test_every_assignment_names_its_test_file() -> None:
     for assignment in ASSIGNMENTS.values():
         assert assignment.test_file.startswith("test_issue_")
+
+
+def test_an_interrupt_stops_every_agent_and_journals_nothing(
+    toy: Toy, toy_task: Task, tmp_path: Path
+) -> None:
+    started = tmp_path / "agent.pid"
+    code = f"import os, pathlib, time; pathlib.Path({str(started)!r}).write_text(str(os.getpid()))"
+    sleeper = _python("sleeper", code + "; time.sleep(60)")
+    race = _race(toy, tmp_path)
+
+    def interrupt_once_the_agent_runs() -> None:
+        deadline = time.monotonic() + 30
+        while not started.exists() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        _thread.interrupt_main()  # what Ctrl-C does
+
+    threading.Thread(target=interrupt_once_the_agent_runs, daemon=True).start()
+    began = time.monotonic()
+    with pytest.raises(KeyboardInterrupt):
+        race.run([toy_task], [sleeper])
+    assert time.monotonic() - began < 30
+    assert gone(int(started.read_text()))
+    assert race.journaled(toy_task, sleeper) is None

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 import threading
 import time
@@ -11,6 +10,7 @@ from pathlib import Path
 from bugbout.agents import AgentRun, CommandAgent
 from bugbout.agents.base import stop_all
 from bugbout.sandbox import NoSandbox
+from tests.processes import gone
 
 
 def _agent(code: str) -> CommandAgent:
@@ -53,18 +53,7 @@ def test_a_timeout_takes_down_everything_the_agent_started(tmp_path: Path) -> No
     run = _run(_agent(spawner), tmp_path, timeout=3)
     assert run.timed_out and run.seconds < 30
     child = int((tmp_path / "repo" / "child.pid").read_text())
-    assert _gone(child)
-
-
-def _gone(pid: int, wait: float = 10.0) -> bool:
-    deadline = time.monotonic() + wait
-    while time.monotonic() < deadline:
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return True
-        time.sleep(0.1)
-    return False
+    assert gone(child)
 
 
 def test_the_run_record_round_trips() -> None:

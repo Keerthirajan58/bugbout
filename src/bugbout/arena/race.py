@@ -138,6 +138,11 @@ class Race:
             for task, agent in jobs
         ]
         try:
+            pending: set[Future[Attempt | None]] = set(futures)
+            while pending:
+                # Short waits, so an interrupt is acted on promptly rather than once
+                # the slowest agent happens to finish.
+                _, pending = wait(pending, timeout=0.5)
             finished = [future.result() for future in futures]
         except KeyboardInterrupt:
             self._stop(pools.values(), futures)
