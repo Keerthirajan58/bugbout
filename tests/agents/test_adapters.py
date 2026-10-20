@@ -102,7 +102,9 @@ class TestClaudeCode:
         assert _option(argv, "--permission-prompts") == "none"
         assert _option(argv, "--permission-mode") == "acceptEdits"
         assert _option(argv, "--disallowedTools") == "WebFetch,WebSearch"
-        assert json.loads(_option(argv, "--settings"))["sandbox"]["enabled"] is True
+        sandbox = json.loads(_option(argv, "--settings"))["sandbox"]
+        assert sandbox["enabled"] and sandbox["failIfUnavailable"]
+        assert not sandbox["allowUnsandboxedCommands"]
 
     def test_an_alias_still_belongs_to_anthropic(self) -> None:
         assert ClaudeCode("sonnet").vendor == "anthropic"

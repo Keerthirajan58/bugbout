@@ -8,10 +8,12 @@ from typing import Unpack, override
 
 from bugbout.agents.base import CodingAgent, Identity, Invocation, Session, read_jsonl
 
-# Shell commands run in Claude Code's own sandbox, and only there.
+# Shell commands run in Claude Code's own sandbox and only there: if the sandbox
+# cannot start, Claude Code stops instead of running them unconfined.
 _SETTINGS = {
     "sandbox": {
         "enabled": True,
+        "failIfUnavailable": True,
         "autoAllowBashIfSandboxed": True,
         "allowUnsandboxedCommands": False,
     }
