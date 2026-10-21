@@ -29,7 +29,7 @@ You need Python 3.12+, git, [uv](https://docs.astral.sh/uv/), and at least one c
 agent CLI installed and logged in.
 
 ```bash
-pip install git+https://github.com/Keerthirajan58/bugbout
+pip install bugbout   # or: uv tool install bugbout
 
 cd your-project
 bugbout init      # writes bugbout.toml from your layout and the agents you have
