@@ -25,8 +25,8 @@ alongside the real fix - tests no agent ever gets to see.
 
 ## Quickstart
 
-You need Python 3.12+, git, [uv](https://docs.astral.sh/uv/), and at least one coding
-agent CLI installed and logged in.
+You need macOS or Linux (on Windows, use WSL2), Python 3.12+, git,
+[uv](https://docs.astral.sh/uv/), and at least one coding agent CLI installed and logged in.
 
 ```bash
 pip install bugbout   # or: uv tool install bugbout
