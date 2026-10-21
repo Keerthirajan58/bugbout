@@ -84,6 +84,8 @@ class Invocation:
     """Added to the caller's environment, which the agent inherits for its credentials."""
 
     stdin: str | None = None
+    unset: tuple[str, ...] = ()
+    """Variables of the caller's environment the agent must not inherit."""
 
 
 class Identity(TypedDict, total=False):
@@ -191,7 +193,7 @@ def _execute(
             process = subprocess.Popen(  # noqa: S603 - an adapter's own command line
                 invocation.argv,
                 cwd=workdir,
-                env={**os.environ, **invocation.env},
+                env={**_inherited(invocation.unset), **invocation.env},
                 stdin=subprocess.PIPE,
                 stdout=out,
                 stderr=err,
@@ -215,6 +217,10 @@ def _execute(
                 _RUNNING.discard(process)
     code = process.returncode
     return code, False, "" if code == 0 else f"exit code {code}"
+
+
+def _inherited(unset: tuple[str, ...]) -> dict[str, str]:
+    return {key: value for key, value in os.environ.items() if key not in unset}
 
 
 _RUNNING: set[subprocess.Popen[str]] = set()

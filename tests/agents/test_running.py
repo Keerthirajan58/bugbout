@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
 import sys
 import threading
 import time
 from pathlib import Path
+from typing import override
 
-from bugbout.agents import AgentRun, CommandAgent
+import pytest
+
+from bugbout.agents import AgentRun, CommandAgent, Invocation, Session
 from bugbout.agents.base import stop_all
 from bugbout.sandbox import NoSandbox
 from tests.processes import gone
@@ -73,3 +77,22 @@ def test_stop_all_ends_an_agent_that_is_still_running(tmp_path: Path) -> None:
         worker.join(timeout=0.2)
     assert not worker.is_alive()
     assert runs[0].exit_code is not None and not runs[0].ok
+
+
+class Isolated(CommandAgent):
+    """An agent that must not inherit one of its caller's variables."""
+
+    @override
+    def invocation(self, session: Session) -> Invocation:
+        return dataclasses.replace(super().invocation(session), unset=("PARENT_ONLY",))
+
+
+def test_variables_an_adapter_unsets_never_reach_the_agent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("PARENT_ONLY", "secret")
+    monkeypatch.setenv("SHARED", "kept")
+    code = "import os, pathlib; pathlib.Path('env.txt').write_text(repr((os.environ.get('PARENT_ONLY'), os.environ.get('SHARED'))))"
+    agent = Isolated([sys.executable, "-c", code], name="isolated", sandboxed=False)
+    _run(agent, tmp_path)
+    assert (tmp_path / "repo" / "env.txt").read_text() == "(None, 'kept')"

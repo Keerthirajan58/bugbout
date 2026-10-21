@@ -106,6 +106,15 @@ class TestClaudeCode:
         assert sandbox["enabled"] and sandbox["failIfUnavailable"]
         assert not sandbox["allowUnsandboxedCommands"]
 
+    def test_it_never_joins_the_claude_code_session_that_started_bugbout(
+        self, session: Session
+    ) -> None:
+        unset = ClaudeCode("sonnet").invocation(session).unset
+        assert {"CLAUDECODE", "CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_MESSAGING_SOCKET"} <= set(
+            unset
+        )
+        assert "CLAUDE_CODE_USE_BEDROCK" not in unset  # the user's own configuration stays
+
     def test_an_alias_still_belongs_to_anthropic(self) -> None:
         assert ClaudeCode("sonnet").vendor == "anthropic"
 

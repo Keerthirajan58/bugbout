@@ -20,6 +20,30 @@ _SETTINGS = {
 }
 
 
+# What a running Claude Code session exports to the commands it runs. bugbout may
+# itself be run from inside Claude Code; a contestant is a session of its own and
+# must never attach to that one.
+PARENT_SESSION = (
+    "CLAUDECODE",
+    "CLAUDE_AGENT_SDK_VERSION",
+    "CLAUDE_CODE_CHILD_SESSION",
+    "CLAUDE_CODE_EMIT_STARTUP_TIMING",
+    "CLAUDE_CODE_ENABLE_SDK_FILE_CHECKPOINTING",
+    "CLAUDE_CODE_ENABLE_TASKS",
+    "CLAUDE_CODE_ENTRYPOINT",
+    "CLAUDE_CODE_EXECPATH",
+    "CLAUDE_CODE_MESSAGING_SOCKET",
+    "CLAUDE_CODE_MESSAGING_TOKEN",
+    "CLAUDE_CODE_QUESTION_PREVIEW_FORMAT",
+    "CLAUDE_CODE_SESSION_ATTENDED",
+    "CLAUDE_CODE_SESSION_ID",
+    "CLAUDE_CODE_SSE_PORT",
+    "CLAUDE_EFFORT",
+    "CLAUDE_PID",
+    "ENABLE_IDE_INTEGRATION",
+)
+
+
 class ClaudeCode(CodingAgent):
     """``claude --print`` from a clean configuration, in Claude Code's own sandbox.
 
@@ -56,7 +80,7 @@ class ClaudeCode(CodingAgent):
             "--settings", json.dumps(_SETTINGS),
             "--disallowedTools", "WebFetch,WebSearch",
         ]  # fmt: skip
-        return Invocation(argv, stdin=session.prompt)
+        return Invocation(argv, stdin=session.prompt, unset=PARENT_SESSION)
 
     @override
     def parse(self, logdir: Path) -> tuple[str, dict[str, int]]:
