@@ -68,9 +68,11 @@ def build_report(results: Results) -> Report:
 def _agents(results: Results, resolved: dict[tuple[str, str], Resolution]) -> list[AgentResult]:
     rows = []
     for name, description in results.agents.items():
-        attempts = [a for a in results.attempts if a.agent == name]
+        everything = [a for a in results.attempts if a.agent == name]
+        # A run a usage limit stopped is not the agent's answer, so it is not scored.
+        attempts = [a for a in everything if a.status != "quota"]
         outcomes = [resolved.get((a.task_id, name)) for a in attempts]
-        seconds = [a.run.seconds for a in attempts if a.status != "crashed"]
+        seconds = [a.run.seconds for a in attempts]
         rows.append(
             AgentResult(
                 name=name,
@@ -82,6 +84,7 @@ def _agents(results: Results, resolved: dict[tuple[str, str], Resolution]) -> li
                 wrong=sum(1 for r in outcomes if r and r.applied and not r.fixed_bug),
                 no_fix=sum(1 for r in outcomes if r is None or not r.applied),
                 failed_runs=sum(1 for a in attempts if a.status != "ok"),
+                stopped_by_quota=len(everything) - len(attempts),
                 median_seconds=round(statistics.median(seconds), 1) if seconds else None,
             )
         )

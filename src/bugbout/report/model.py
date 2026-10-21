@@ -27,7 +27,11 @@ class AgentResult:
     """Left no change to the source, or one that did not apply."""
 
     failed_runs: int
-    """Runs that errored, timed out or hit a quota, whatever they left behind."""
+    """Scored runs that errored or timed out, whatever they left behind."""
+
+    stopped_by_quota: int
+    """Runs a usage limit stopped before they produced anything. They are not scored,
+    and ``bugbout run --retry-failed`` runs them again."""
 
     median_seconds: float | None
 

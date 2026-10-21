@@ -137,3 +137,13 @@ def test_with_nothing_resolved_or_approved_the_text_says_so() -> None:
     text = render_markdown(build_report(nobody))
     assert "Best single agent: none resolved a bug" in text
     assert "Nothing was approved; 1 of 1 wrong patches were rejected." in text
+
+
+def test_a_run_stopped_by_a_usage_limit_is_not_scored() -> None:
+    results = _results()
+    stopped = dataclasses.replace(_attempt("t2", "b"), status="quota", patch=Patch(""))
+    attempts = [a for a in results.attempts if (a.task_id, a.agent) != ("t2", "b")]
+    report = build_report(dataclasses.replace(results, attempts=[*attempts, stopped]))
+    b = next(agent for agent in report.agents if agent.name == "b")
+    assert (b.tasks, b.stopped_by_quota) == (1, 1)
+    assert "- b: 1 run(s) hit a usage limit and are not scored." in render_markdown(report)

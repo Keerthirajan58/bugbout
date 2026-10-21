@@ -43,6 +43,7 @@ def _agents(report: Report) -> str:
             "| Median time |",
             "|---|---|---|---|---|---|---|",
             *rows,
+            *_quota_notes(report),
             "",
         ]
     )
@@ -147,3 +148,14 @@ def _cell(text: str) -> str:
 
 def _capitalised(text: str) -> str:
     return text[:1].upper() + text[1:]
+
+
+def _quota_notes(report: Report) -> list[str]:
+    stopped = [a for a in report.agents if a.stopped_by_quota]
+    if not stopped:
+        return []
+    notes = [
+        f"- {a.name}: {a.stopped_by_quota} run(s) hit a usage limit and are not scored."
+        for a in stopped
+    ]
+    return ["", *notes, "", "Run `bugbout run --retry-failed` once the limits reset."]
