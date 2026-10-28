@@ -1,3 +1,5 @@
+[![PyPI version](https://fury.io)](https://fury.io)
+
 # bugbout
 
 **Which coding agent actually fixes bugs in *your* codebase?**
