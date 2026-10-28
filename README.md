@@ -1,4 +1,4 @@
-[![PyPI version](https://fury.io)](https://fury.io)
+[![PyPI version](https://shields.io)](https://pypi.org/project/bugbout/)
 
 # bugbout
 
