@@ -1,6 +1,12 @@
-[![PyPI version](https://shields.io)](https://pypi.org/project/bugbout/)
-
 # bugbout
+
+[![PyPI version](https://img.shields.io/pypi/v/bugbout?label=PyPI&logo=pypi&logoColor=white)](https://pypi.org/project/bugbout/)
+[![Supported Python versions](https://img.shields.io/pypi/pyversions/bugbout?label=Python&logo=python&logoColor=white)](https://pypi.org/project/bugbout/)
+[![CI status](https://img.shields.io/github/actions/workflow/status/Keerthirajan58/bugbout/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](https://github.com/Keerthirajan58/bugbout/actions/workflows/ci.yml?query=branch%3Amain)
+[![License](https://img.shields.io/pypi/l/bugbout?label=License&logo=opensourceinitiative&logoColor=white)](https://github.com/Keerthirajan58/bugbout/blob/main/LICENSE)
+[![Development status](https://img.shields.io/pypi/status/bugbout?label=Status&color=orange)](https://github.com/Keerthirajan58/bugbout/blob/main/CHANGELOG.md)
+[![Linted and formatted with Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Type checked with mypy in strict mode](https://img.shields.io/badge/Types-mypy%20strict-2a6db2)](https://mypy-lang.org/)
 
 **Which coding agent actually fixes bugs in *your* codebase?**
 
@@ -87,4 +93,4 @@ print(render_markdown(report))
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/Keerthirajan58/bugbout/blob/main/LICENSE)
