@@ -1,0 +1,18 @@
+{
+  "name": "bugbout",
+  "version": "0.1.1",
+  "description": "Run bugbout from Claude Code: test coding agents on bugs your repository already fixed.",
+  "author": {
+    "name": "Keerthirajan Senthilkumar",
+    "url": "https://github.com/Keerthirajan58"
+  },
+  "homepage": "https://github.com/Keerthirajan58/bugbout",
+  "repository": "https://github.com/Keerthirajan58/bugbout",
+  "license": "MIT",
+  "keywords": [
+    "coding-agents",
+    "evaluation",
+    "benchmark",
+    "swe-bench"
+  ]
+}

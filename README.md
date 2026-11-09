@@ -91,6 +91,25 @@ report = Bout.load(".").run()
 print(render_markdown(report))
 ```
 
+## From your coding agent
+
+bugbout ships an [Agent Skill](https://agentskills.io) that teaches coding agents to set
+up a bout, run it and explain the report. Install it in Claude Code (2.1.275 or later):
+
+```text
+/plugin install bugbout --marketplace Keerthirajan58/bugbout
+```
+
+On older versions, run `/plugin marketplace add Keerthirajan58/bugbout` and then
+`/plugin install bugbout@bugbout`. For Codex, Cursor, Copilot, Gemini CLI and other agents:
+
+```bash
+npx skills add Keerthirajan58/bugbout
+```
+
+Or copy the `skills/bugbout` folder into your agent's skills folder, such as
+`~/.claude/skills/` or `~/.agents/skills/`.
+
 ## License
 
 [MIT](https://github.com/Keerthirajan58/bugbout/blob/main/LICENSE)

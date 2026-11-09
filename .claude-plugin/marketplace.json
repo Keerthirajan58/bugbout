@@ -1,0 +1,15 @@
+{
+  "name": "bugbout",
+  "description": "Find out which coding agent actually fixes bugs in your codebase.",
+  "owner": {
+    "name": "Keerthirajan Senthilkumar",
+    "url": "https://github.com/Keerthirajan58"
+  },
+  "plugins": [
+    {
+      "name": "bugbout",
+      "source": "./",
+      "description": "Run bugbout from Claude Code: test coding agents on bugs your repository already fixed."
+    }
+  ]
+}
