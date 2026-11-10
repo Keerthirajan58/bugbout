@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1 - 2026-11-09
+
+- An Agent Skill (`skills/bugbout`) teaches Claude Code, Codex, Cursor, Copilot, Gemini CLI
+  and other agents to set up a bout, run it and explain the report. In Claude Code, install
+  it with `/plugin install bugbout --marketplace Keerthirajan58/bugbout`.
+- Package metadata now names the author in full, with a new contact email.
+- The README shows badges, the supported platforms (macOS and Linux, WSL2 on Windows) and
+  installs from PyPI.
+
 ## 0.1.0 - 2026-10-20
 
 First release.
